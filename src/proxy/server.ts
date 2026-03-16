@@ -4,15 +4,21 @@ import helmet from 'helmet';
 import morgan from 'morgan';
 import { WebSocketServer, WebSocket } from 'ws';
 import { createServer } from 'http';
+import fs from 'fs';
+import path from 'path';
 import { VectorMemory } from '../memory/vector-memory';
 import { ContextOptimizer } from '../optimization/context-optimizer';
+import { OptimizationStatsTool } from '../analytics/mcp-tool';
+import { ReportExporter } from '../analytics/report-exporter';
+import { DashboardAuth } from '../auth/dashboard-auth';
 import { 
   ProxyConfig, 
   MCPRequest, 
   MCPResponse, 
   MCPContext,
   MCPServerConfig,
-  OptimizedContext
+  OptimizedContext,
+  MCPTool
 } from '../types/mcp-types';
 
 /**
@@ -28,14 +34,22 @@ export class ProxyServer {
   private connectedClients: Map<WebSocket, { id: string }> = new Map();
   private serverConnections: Map<string, WebSocket> = new Map();
   
+  private statsTool: OptimizationStatsTool;
+  private reportExporter: ReportExporter;
+  private dashboardAuth: DashboardAuth;
+  
   constructor(
     private config: ProxyConfig,
     private vectorMemory: VectorMemory,
-    private contextOptimizer: ContextOptimizer
+    private contextOptimizer: ContextOptimizer,
+    statsDir?: string
   ) {
     this.app = express();
     this.httpServer = createServer(this.app);
     this.wss = new WebSocketServer({ server: this.httpServer });
+    this.statsTool = new OptimizationStatsTool(statsDir);
+    this.reportExporter = new ReportExporter(this.statsTool.getStatsManager());
+    this.dashboardAuth = new DashboardAuth();
     
     this.setupMiddleware();
     this.setupRoutes();
@@ -99,19 +113,24 @@ export class ProxyServer {
    * Setup Express routes
    */
   private setupRoutes(): void {
-    // Health check
+    // Health check (public)
     this.app.get('/health', (req, res) => {
       res.json({
         status: 'healthy',
         timestamp: new Date().toISOString(),
         servers: this.config.mcpServers.length,
         connected: this.serverConnections.size,
-        optimization: this.config.optimization.enabled
+        optimization: this.config.optimization.enabled,
+        dashboardAuth: this.dashboardAuth.isAuthRequired()
       });
     });
     
-    // Metrics endpoint
-    this.app.get('/metrics', (req, res) => {
+    // Authentication routes
+    const authRouter = this.dashboardAuth.createMiddleware();
+    this.app.use(authRouter);
+    
+    // Metrics endpoint (protected if auth required)
+    this.app.get('/metrics', this.dashboardAuth.createBasicAuthMiddleware(), (req, res) => {
       const metrics = this.contextOptimizer.getMetrics();
       const cacheStats = this.contextOptimizer.getCacheStats();
       
@@ -131,58 +150,150 @@ export class ProxyServer {
       });
     });
     
-    // Dashboard (if enabled)
+    // Report export endpoints (protected)
+    this.app.get('/api/reports/formats', this.dashboardAuth.createBasicAuthMiddleware(), (req, res) => {
+      try {
+        const formats = this.reportExporter.getAvailableFormats();
+        const periods = this.reportExporter.getAvailablePeriods();
+        
+        res.json({
+          formats,
+          periods,
+          defaultFormat: 'json',
+          defaultPeriod: 'week'
+        });
+      } catch (error) {
+        console.error('Failed to get report formats:', error);
+        res.status(500).json({ error: 'Failed to get report formats' });
+      }
+    });
+    
+    this.app.post('/api/reports/export', this.dashboardAuth.createBasicAuthMiddleware(), async (req, res) => {
+      try {
+        const { format = 'json', period = 'week', includeDetails = true } = req.body;
+        
+        const result = await this.reportExporter.exportReport({
+          format,
+          period,
+          includeDetails,
+          exportPath: './data/reports'
+        });
+        
+        res.json({
+          success: true,
+          message: 'Report exported successfully',
+          report: {
+            path: result.path,
+            size: result.size,
+            downloadUrl: `/api/reports/download/${path.basename(result.path)}`
+          }
+        });
+      } catch (error) {
+        console.error('Failed to export report:', error);
+        res.status(500).json({ 
+          success: false, 
+          error: 'Failed to export report',
+          message: error instanceof Error ? error.message : String(error)
+        });
+      }
+    });
+    
+    this.app.get('/api/reports/download/:filename', this.dashboardAuth.createBasicAuthMiddleware(), (req, res) => {
+      try {
+        const { filename } = req.params;
+        const filePath = path.join('./data/reports', filename);
+        
+        if (!fs.existsSync(filePath)) {
+          return res.status(404).json({ error: 'Report not found' });
+        }
+        
+        // Validate filename to prevent directory traversal
+        if (!filename.match(/^optimization-report-\d{4}-\d{2}-\d{2}-\d{6}\.(json|csv)$/)) {
+          return res.status(400).json({ error: 'Invalid filename' });
+        }
+        
+        const fileExt = path.extname(filename).toLowerCase();
+        const contentType = fileExt === '.csv' ? 'text/csv' : 'application/json';
+        
+        res.setHeader('Content-Type', contentType);
+        res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+        
+        const fileStream = fs.createReadStream(filePath);
+        fileStream.pipe(res);
+        
+      } catch (error) {
+        console.error('Failed to download report:', error);
+        res.status(500).json({ error: 'Failed to download report' });
+      }
+    });
+    
+    // Dashboard (if enabled, protected)
     if (this.config.analytics.dashboardEnabled) {
-      this.app.get('/dashboard', (req, res) => {
-        res.send(`
-          <!DOCTYPE html>
-          <html>
-            <head>
-              <title>MCP Smart Proxy Dashboard</title>
-              <style>
-                body { font-family: Arial, sans-serif; margin: 40px; }
-                .card { background: #f5f5f5; padding: 20px; margin: 20px 0; border-radius: 8px; }
-                .metric { margin: 10px 0; }
-                .metric-value { font-weight: bold; color: #007acc; }
-              </style>
-            </head>
-            <body>
-              <h1>MCP Smart Proxy Dashboard</h1>
-              <div class="card">
-                <h2>Optimization Metrics</h2>
-                <div class="metric">Total Requests: <span class="metric-value" id="totalRequests">0</span></div>
-                <div class="metric">Average Token Savings: <span class="metric-value" id="avgSavings">0%</span></div>
-                <div class="metric">Cache Hit Rate: <span class="metric-value" id="cacheHitRate">0%</span></div>
-              </div>
-              <div class="card">
-                <h2>Server Status</h2>
-                <div class="metric">Configured Servers: <span class="metric-value" id="configuredServers">0</span></div>
-                <div class="metric">Connected Servers: <span class="metric-value" id="connectedServers">0</span></div>
-              </div>
-              <script>
-                async function updateMetrics() {
-                  try {
-                    const response = await fetch('/metrics');
-                    const data = await response.json();
-                    
-                    document.getElementById('totalRequests').textContent = data.optimization.totalRequests;
-                    document.getElementById('avgSavings').textContent = data.optimization.averageSavings.toFixed(1) + '%';
-                    document.getElementById('cacheHitRate').textContent = data.optimization.cache.hitRate + '%';
-                    document.getElementById('configuredServers').textContent = data.servers.configured;
-                    document.getElementById('connectedServers').textContent = data.servers.connected;
-                  } catch (error) {
-                    console.error('Failed to fetch metrics:', error);
+      this.app.get('/dashboard', this.dashboardAuth.createBasicAuthMiddleware(), (req, res) => {
+        // Serve the React dashboard build
+        const dashboardPath = path.join(__dirname, '../../dashboard/dist');
+        
+        if (fs.existsSync(dashboardPath)) {
+          // Serve static files from dashboard build
+          res.sendFile(path.join(dashboardPath, 'index.html'));
+        } else {
+          // Fallback to simple dashboard
+          res.send(`
+            <!DOCTYPE html>
+            <html>
+              <head>
+                <title>MCP Smart Proxy Dashboard</title>
+                <style>
+                  body { font-family: Arial, sans-serif; margin: 40px; }
+                  .card { background: #f5f5f5; padding: 20px; margin: 20px 0; border-radius: 8px; }
+                  .metric { margin: 10px 0; }
+                  .metric-value { font-weight: bold; color: #007acc; }
+                </style>
+              </head>
+              <body>
+                <h1>MCP Smart Proxy Dashboard</h1>
+                <div class="card">
+                  <h2>Optimization Metrics</h2>
+                  <div class="metric">Total Requests: <span class="metric-value" id="totalRequests">0</span></div>
+                  <div class="metric">Average Token Savings: <span class="metric-value" id="avgSavings">0%</span></div>
+                  <div class="metric">Cache Hit Rate: <span class="metric-value" id="cacheHitRate">0%</span></div>
+                </div>
+                <div class="card">
+                  <h2>Server Status</h2>
+                  <div class="metric">Configured Servers: <span class="metric-value" id="configuredServers">0</span></div>
+                  <div class="metric">Connected Servers: <span class="metric-value" id="connectedServers">0</span></div>
+                </div>
+                <script>
+                  async function updateMetrics() {
+                    try {
+                      const response = await fetch('/metrics');
+                      const data = await response.json();
+                      
+                      document.getElementById('totalRequests').textContent = data.optimization.totalRequests;
+                      document.getElementById('avgSavings').textContent = data.optimization.averageSavings.toFixed(1) + '%';
+                      document.getElementById('cacheHitRate').textContent = data.optimization.cache.hitRate + '%';
+                      document.getElementById('configuredServers').textContent = data.servers.configured;
+                      document.getElementById('connectedServers').textContent = data.servers.connected;
+                    } catch (error) {
+                      console.error('Failed to fetch metrics:', error);
+                    }
                   }
-                }
-                
-                // Update every 5 seconds
-                updateMetrics();
-                setInterval(updateMetrics, 5000);
-              </script>
-            </body>
-          </html>
-        `);
+                  
+                  // Update every 5 seconds
+                  updateMetrics();
+                  setInterval(updateMetrics, 5000);
+                </script>
+              </body>
+            </html>
+          `);
+        }
       });
+      
+      // Serve static dashboard files
+      const dashboardStaticPath = path.join(__dirname, '../../dashboard/dist');
+      if (fs.existsSync(dashboardStaticPath)) {
+        this.app.use('/dashboard-static', express.static(dashboardStaticPath));
+      }
     }
     
     // Proxy endpoint for HTTP-based MCP servers
@@ -320,8 +431,13 @@ export class ProxyServer {
         break;
       
       default:
-        // Forward to appropriate server
-        await this.forwardToServer(ws, message);
+        // Check if it's a stats tool call
+        if (message.method === 'tools/call' && message.params?.name?.startsWith('get_')) {
+          await this.handleStatsToolCall(ws, message);
+        } else {
+          // Forward to appropriate server
+          await this.forwardToServer(ws, message);
+        }
         break;
     }
   }
@@ -428,6 +544,12 @@ export class ProxyServer {
     try {
       const { name, arguments: args } = message.params;
       
+      // Check if it's a stats tool
+      if (name.startsWith('get_') || name.startsWith('export_')) {
+        await this.handleStatsToolCall(ws, message);
+        return;
+      }
+      
       // Find which server has this tool
       const server = await this.findServerForTool(name);
       if (!server) {
@@ -454,6 +576,35 @@ export class ProxyServer {
     } catch (error) {
       console.error('Tool call failed:', error);
       this.sendError(ws, 'Tool call failed', message.id);
+    }
+  }
+  
+  /**
+   * Handle stats tool call
+   */
+  private async handleStatsToolCall(ws: WebSocket, message: any): Promise<void> {
+    try {
+      const { name, arguments: args } = message.params;
+      
+      // Execute stats tool
+      const result = await this.statsTool.executeTool(name, args || {});
+      
+      const response: MCPResponse = {
+        result,
+        id: message.id
+      };
+      
+      ws.send(JSON.stringify(response));
+      
+      // Log the stats query
+      console.log(`Stats tool executed: ${name}`, {
+        query: args?.format || 'summary',
+        timestamp: new Date().toISOString()
+      });
+      
+    } catch (error) {
+      console.error('Stats tool call failed:', error);
+      this.sendError(ws, `Stats tool failed: ${error instanceof Error ? error.message : String(error)}`, message.id);
     }
   }
   
@@ -525,9 +676,10 @@ export class ProxyServer {
   /**
    * Get all tools from all servers
    */
-  private async getAllTools(): Promise<any[]> {
-    const allTools: any[] = [];
+  private async getAllTools(): Promise<MCPTool[]> {
+    const allTools: MCPTool[] = [];
     
+    // Get tools from connected MCP servers
     for (const [serverName, serverWs] of this.serverConnections) {
       try {
         const tools = await this.getToolsFromServer(serverWs, serverName);
@@ -536,6 +688,10 @@ export class ProxyServer {
         console.error(`Failed to get tools from server ${serverName}:`, error);
       }
     }
+    
+    // Add optimization stats tools
+    const statsTools = this.statsTool.getTools();
+    allTools.push(...statsTools);
     
     return allTools;
   }

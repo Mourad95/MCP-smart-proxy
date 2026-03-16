@@ -4,6 +4,9 @@ import { Command } from 'commander';
 import { ProxyServer } from './proxy/server';
 import { VectorMemory } from './memory/vector-memory';
 import { ContextOptimizer } from './optimization/context-optimizer';
+import { EnvValidator } from './config/env-validator';
+import { SignalHandler } from './utils/signal-handler';
+import { SecretMasking } from './security/secret-masking';
 import { readConfig, validateConfig } from './config/config-loader';
 import { ProxyConfig } from './types/mcp-types';
 
@@ -51,13 +54,17 @@ program
         config.optimization.embeddingModel
       );
       
+      // Determine stats directory
+      const statsDir = process.env.MCP_STATS_DIR || './data/stats';
+      
       const contextOptimizer = new ContextOptimizer(
         vectorMemory,
-        config.optimization
+        config.optimization,
+        statsDir
       );
       
       // Create and start proxy server
-      const server = new ProxyServer(config, vectorMemory, contextOptimizer);
+      const server = new ProxyServer(config, vectorMemory, contextOptimizer, statsDir);
       await server.start();
       
       console.log(`✅ MCP Smart Proxy running on port ${config.port}`);

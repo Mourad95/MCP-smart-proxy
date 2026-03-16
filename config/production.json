@@ -1,0 +1,47 @@
+{
+  "port": 3000,
+  "mcpServers": [
+    {
+      "name": "filesystem",
+      "url": "ws://mcp-filesystem:8080",
+      "description": "Filesystem access server (Docker sidecar)",
+      "priority": 1,
+      "enabled": true,
+      "timeout": 30000
+    },
+    {
+      "name": "github",
+      "url": "ws://mcp-github:8081",
+      "description": "GitHub operations server (Docker sidecar)",
+      "priority": 2,
+      "enabled": true,
+      "timeout": 30000
+    },
+    {
+      "name": "search",
+      "url": "ws://mcp-search:8082",
+      "description": "Web search server (optional)",
+      "priority": 3,
+      "enabled": false,
+      "timeout": 30000
+    }
+  ],
+  "optimization": {
+    "enabled": true,
+    "maxContextTokens": 1000,
+    "embeddingModel": "Xenova/all-MiniLM-L6-v2",
+    "cacheEnabled": true,
+    "semanticRouting": true,
+    "minRelevanceScore": 0.3
+  },
+  "logging": {
+    "level": "info",
+    "format": "json",
+    "path": "/app/logs/proxy.log"
+  },
+  "analytics": {
+    "enabled": true,
+    "retentionDays": 90,
+    "dashboardEnabled": true
+  }
+}

@@ -1,0 +1,57 @@
+# Prometheus configuration for MCP Smart Proxy
+
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+  external_labels:
+    monitor: 'mcp-smart-proxy'
+
+# Alert manager configuration
+alerting:
+  alertmanagers:
+    - static_configs:
+        - targets: []
+
+# Load rules once and periodically evaluate them according to the global 'evaluation_interval'.
+rule_files:
+  # - "first_rules.yml"
+  # - "second_rules.yml"
+
+# Scrape configurations
+scrape_configs:
+  # MCP Smart Proxy metrics
+  - job_name: 'mcp-smart-proxy'
+    static_configs:
+      - targets: ['mcp-smart-proxy:3000']
+    metrics_path: '/metrics/prometheus'
+    scrape_interval: 10s
+    scrape_timeout: 5s
+    relabel_configs:
+      - source_labels: [__address__]
+        target_label: instance
+        regex: '(.*):.*'
+        replacement: '${1}'
+
+  # Node exporter (if running)
+  - job_name: 'node-exporter'
+    static_configs:
+      - targets: ['node-exporter:9100']
+    scrape_interval: 15s
+
+  # Docker daemon metrics (if running)
+  - job_name: 'docker'
+    static_configs:
+      - targets: ['docker-daemon:9323']
+    scrape_interval: 15s
+
+  # Prometheus self-monitoring
+  - job_name: 'prometheus'
+    static_configs:
+      - targets: ['localhost:9090']
+    scrape_interval: 15s
+
+  # Grafana (if running)
+  - job_name: 'grafana'
+    static_configs:
+      - targets: ['grafana:3000']
+    scrape_interval: 30s

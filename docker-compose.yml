@@ -1,0 +1,150 @@
+# MCP Smart Proxy - Docker Compose for Production
+# Sidecar deployment configuration
+
+version: '3.8'
+
+services:
+  # MCP Smart Proxy - Main service
+  mcp-smart-proxy:
+    build: .
+    image: mcp-smart-proxy:latest
+    container_name: mcp-smart-proxy
+    restart: unless-stopped
+    ports:
+      - "3000:3000"  # Proxy HTTP/WebSocket port
+    environment:
+      - NODE_ENV=production
+      - MCP_PROXY_PORT=3000
+      - MCP_VECTOR_MEMORY_PATH=/data/vector-index
+      - MCP_LOG_LEVEL=info
+      - MCP_OPTIMIZATION_ENABLED=true
+      - MCP_MAX_CONTEXT_TOKENS=1000
+    volumes:
+      - mcp-data:/data  # Persistent vector storage
+      - ./config:/app/config:ro  # Read-only config mount
+      - ./logs:/app/logs  # Log directory
+    networks:
+      - mcp-network
+    healthcheck:
+      test: ["CMD", "node", "/app/dist/healthcheck.js"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+    labels:
+      - "com.openclaw.mcp.proxy=true"
+      - "traefik.enable=true"
+      - "traefik.http.routers.mcp-proxy.rule=Host(`mcp-proxy.local`)"
+      - "traefik.http.services.mcp-proxy.loadbalancer.server.port=3000"
+
+  # Example: Filesystem MCP Server (Sidecar)
+  mcp-filesystem:
+    image: ghcr.io/modelcontextprotocol/servers-filesystem:latest
+    container_name: mcp-filesystem
+    restart: unless-stopped
+    environment:
+      - MCP_SERVER_PORT=8080
+    volumes:
+      - ./workspace:/workspace:ro  # Mount workspace for file operations
+    networks:
+      - mcp-network
+    expose:
+      - "8080"
+    labels:
+      - "com.openclaw.mcp.server=filesystem"
+
+  # Example: GitHub MCP Server (Sidecar)
+  mcp-github:
+    image: ghcr.io/modelcontextprotocol/servers-github:latest
+    container_name: mcp-github
+    restart: unless-stopped
+    environment:
+      - MCP_SERVER_PORT=8081
+      - GITHUB_TOKEN=${GITHUB_TOKEN:-}
+    networks:
+      - mcp-network
+    expose:
+      - "8081"
+    labels:
+      - "com.openclaw.mcp.server=github"
+
+  # Monitoring stack (optional)
+  prometheus:
+    image: prom/prometheus:latest
+    container_name: mcp-prometheus
+    restart: unless-stopped
+    volumes:
+      - ./monitoring/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus-data:/prometheus
+    networks:
+      - mcp-network
+    ports:
+      - "9090:9090"
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+      - '--web.console.libraries=/etc/prometheus/console_libraries'
+      - '--web.console.templates=/etc/prometheus/consoles'
+      - '--storage.tsdb.retention.time=200h'
+      - '--web.enable-lifecycle'
+
+  grafana:
+    image: grafana/grafana:latest
+    container_name: mcp-grafana
+    restart: unless-stopped
+    environment:
+      - GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_PASSWORD:-admin}
+      - GF_INSTALL_PLUGINS=grafana-piechart-panel
+    volumes:
+      - grafana-data:/var/lib/grafana
+      - ./monitoring/dashboards:/etc/grafana/provisioning/dashboards
+      - ./monitoring/datasources:/etc/grafana/provisioning/datasources
+    networks:
+      - mcp-network
+    ports:
+      - "3001:3000"
+    depends_on:
+      - prometheus
+
+  # Traefik reverse proxy (optional)
+  traefik:
+    image: traefik:v3.0
+    container_name: traefik
+    restart: unless-stopped
+    command:
+      - "--api.insecure=true"
+      - "--providers.docker=true"
+      - "--providers.docker.exposedbydefault=false"
+      - "--entrypoints.web.address=:80"
+      - "--entrypoints.websecure.address=:443"
+    ports:
+      - "80:80"
+      - "443:443"
+      - "8088:8080"  # Traefik dashboard
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    networks:
+      - mcp-network
+    labels:
+      - "traefik.enable=true"
+
+volumes:
+  mcp-data:
+    name: mcp-smart-proxy-data
+    driver: local
+    driver_opts:
+      type: none
+      o: bind
+      device: ${PWD}/data
+  prometheus-data:
+    name: mcp-prometheus-data
+  grafana-data:
+    name: mcp-grafana-data
+
+networks:
+  mcp-network:
+    name: mcp-smart-proxy-network
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.20.0.0/16

@@ -65,10 +65,10 @@ Cloudflare's research shows that traditional MCP implementations waste **81% of 
 
 ## 🛠️ Installation
 
-### Quick Install
+### Quick Install (Development)
 ```bash
 # Clone the repository
-git clone https://github.com/openclaw-community/mcp-smart-proxy.git
+git clone https://github.com/Mourad95/mcp-smart-proxy.git
 cd mcp-smart-proxy
 
 # Install dependencies
@@ -81,13 +81,38 @@ npm run build
 npm start
 ```
 
-### Docker Installation
+### Docker Installation (Production)
 ```bash
-# Pull the Docker image
-docker pull openclaw/mcp-smart-proxy:latest
+# Build the Docker image
+docker build -t mcp-smart-proxy:latest .
 
-# Run the container
-docker run -p 3000:3000 openclaw/mcp-smart-proxy
+# Run with persistent storage
+docker run -d \
+  --name mcp-smart-proxy \
+  -p 3000:3000 \
+  -v mcp-data:/data \
+  mcp-smart-proxy:latest
+```
+
+### Docker Compose (Production with Sidecars)
+```bash
+# Start all services
+docker-compose up -d
+
+# Check status
+docker-compose ps
+
+# View logs
+docker-compose logs -f mcp-smart-proxy
+```
+
+### Health Check
+```bash
+# Check container health
+docker inspect --format='{{.State.Health.Status}}' mcp-smart-proxy
+
+# Or manually
+curl http://localhost:3000/health
 ```
 
 ## ⚙️ Configuration
@@ -462,6 +487,47 @@ npm test
 - [Advanced Usage](docs/advanced-usage.md) - Custom configurations
 - [Performance Tuning](docs/performance-tuning.md) - Optimization guide
 - [Troubleshooting](docs/troubleshooting.md) - Common issues and solutions
+
+## 🐳 Production Deployment
+
+### Docker Configuration
+The project includes production-ready Docker configuration:
+
+1. **Multi-stage Dockerfile** optimized for size
+2. **Docker Compose** with sidecar MCP servers
+3. **Health checks** for container orchestration
+4. **Persistent volumes** for vector storage
+5. **Monitoring stack** (Prometheus + Grafana)
+
+### Quick Start with Docker Compose
+```bash
+# Clone and deploy
+git clone https://github.com/Mourad95/mcp-smart-proxy.git
+cd mcp-smart-proxy
+docker-compose up -d
+
+# Access dashboard
+open http://localhost:3000/dashboard
+```
+
+### Health Monitoring
+```bash
+# Built-in health checks
+curl http://localhost:3000/health
+
+# Prometheus metrics
+curl http://localhost:3000/metrics/prometheus
+
+# Grafana dashboard (if enabled)
+open http://localhost:3001
+```
+
+### Persistent Storage
+Vector data is stored in Docker volumes:
+- **mcp-data**: Vector indexes and embeddings
+- Backups recommended for production use
+
+See [DEPLOYMENT.md](DEPLOYMENT.md) for detailed production deployment guide.
 
 ## 📄 License
 

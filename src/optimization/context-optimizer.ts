@@ -1,4 +1,5 @@
 import { VectorMemory } from '../memory/vector-memory';
+import { OptimizationStatsManager } from '../analytics/optimization-stats';
 import { 
   QueryAnalysis, 
   OptimizedContext, 
@@ -15,10 +16,12 @@ import {
  * 2. Removing duplicate information
  * 3. Limiting context size
  * 4. Semantic routing to appropriate servers
+ * 5. Tracking optimization statistics
  */
 export class ContextOptimizer {
   private cache: Map<string, OptimizedContext> = new Map();
   private metrics: OptimizationMetrics[] = [];
+  private statsManager: OptimizationStatsManager;
   
   constructor(
     private vectorMemory: VectorMemory,
@@ -29,8 +32,11 @@ export class ContextOptimizer {
       cacheEnabled: boolean;
       semanticRouting: boolean;
       minRelevanceScore: number;
-    }
-  ) {}
+    },
+    statsDir?: string
+  ) {
+    this.statsManager = new OptimizationStatsManager(statsDir);
+  }
   
   /**
    * Analyze a query to determine intent and relevant tools
@@ -85,7 +91,7 @@ export class ContextOptimizer {
     if (this.config.cacheEnabled && this.cache.has(cacheKey)) {
       const cached = this.cache.get(cacheKey)!;
       
-      this.recordMetrics({
+      const metrics: OptimizationMetrics = {
         timestamp: new Date(),
         query,
         originalTokens: this.estimateTokens(originalContext),
@@ -95,7 +101,10 @@ export class ContextOptimizer {
         responseTime: Date.now() - startTime,
         cacheHit: true,
         toolsUsed: cached.tools.map(tool => tool.name)
-      });
+      };
+      
+      this.recordMetrics(metrics);
+      this.statsManager.recordMetrics(metrics);
       
       return cached;
     }
@@ -113,7 +122,7 @@ export class ContextOptimizer {
         }
       };
       
-      this.recordMetrics({
+      const metrics: OptimizationMetrics = {
         timestamp: new Date(),
         query,
         originalTokens: this.estimateTokens(originalContext),
@@ -123,7 +132,10 @@ export class ContextOptimizer {
         responseTime: Date.now() - startTime,
         cacheHit: false,
         toolsUsed: originalContext.tools.map(tool => tool.name)
-      });
+      };
+      
+      this.recordMetrics(metrics);
+      this.statsManager.recordMetrics(metrics);
       
       return result;
     }
@@ -167,7 +179,7 @@ export class ContextOptimizer {
     }
     
     // Record metrics
-    this.recordMetrics({
+    const metrics: OptimizationMetrics = {
       timestamp: new Date(),
       query,
       originalTokens: this.estimateTokens(originalContext),
@@ -177,7 +189,12 @@ export class ContextOptimizer {
       responseTime: Date.now() - startTime,
       cacheHit: false,
       toolsUsed: optimizedContext.tools.map(tool => tool.name)
-    });
+    };
+    
+    this.recordMetrics(metrics);
+    
+    // Log to optimization stats
+    this.statsManager.recordMetrics(metrics);
     
     return optimizedContext;
   }

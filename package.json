@@ -8,8 +8,10 @@
     "mcp-smart-proxy": "dist/cli.js"
   },
   "scripts": {
-    "build": "tsc",
+    "build": "tsc && npm run build:healthcheck",
+    "build:healthcheck": "tsc src/healthcheck.ts --outDir dist --module commonjs --target es2022",
     "start": "node dist/index.js",
+    "start:prod": "NODE_ENV=production node dist/index.js start --config ./config/production.json",
     "dev": "ts-node src/index.ts",
     "test": "jest",
     "test:unit": "jest --testPathPattern=unit",
@@ -19,6 +21,10 @@
     "benchmark": "node dist/benchmark/index.js",
     "benchmark:compare": "node dist/benchmark/compare.js",
     "maintenance": "node dist/scripts/maintenance.js",
+    "healthcheck": "node dist/healthcheck.js",
+    "docker:build": "docker build -t mcp-smart-proxy:latest .",
+    "docker:run": "docker run -p 3000:3000 -v mcp-data:/data mcp-smart-proxy:latest",
+    "docker:compose": "docker-compose up -d",
     "lint": "eslint src/**/*.ts",
     "format": "prettier --write src/**/*.ts",
     "prepare": "npm run build",
@@ -58,6 +64,7 @@
     "helmet": "^7.1.0",
     "morgan": "^1.10.0",
     "vectra": "^0.3.0",
+    "winston": "^3.11.0",
     "ws": "^8.14.2",
     "zod": "^3.22.4"
   },

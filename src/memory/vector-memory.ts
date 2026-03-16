@@ -16,7 +16,7 @@ export class VectorMemory {
   private initialized: boolean = false;
   
   constructor(
-    private indexPath: string = path.join(process.cwd(), '.mcp-vector-index'),
+    private indexPath: string = process.env.MCP_VECTOR_MEMORY_PATH || path.join(process.cwd(), '.mcp-vector-index'),
     private embeddingModel: string = 'Xenova/all-MiniLM-L6-v2',
     private chunkSize: number = 500,
     private overlap: number = 50

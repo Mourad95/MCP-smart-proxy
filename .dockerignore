@@ -1,0 +1,67 @@
+# Docker ignore file for MCP Smart Proxy
+
+# Git
+.git
+.gitignore
+.gitattributes
+
+# Node.js
+node_modules
+npm-debug.log
+yarn-debug.log
+yarn-error.log
+
+# Build artifacts
+dist
+*.tsbuildinfo
+coverage
+
+# IDE
+.vscode
+.idea
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Tests
+test-results
+*.test.ts
+*.spec.ts
+
+# Documentation
+docs/_build
+docs/_site
+
+# Local development
+.env
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+
+# Temporary files
+tmp
+temp
+logs
+
+# Source maps (optional - include for debugging)
+*.map
+
+# TypeScript source (included in build)
+src/**/*.ts
+!src/**/*.d.ts
+
+# Configuration templates (keep only production config)
+config/*.json
+!config/production.json
+!config/default.json
+
+# Examples (optional - include minimal examples)
+examples/*
+!examples/claude-desktop/config.json
+
+# Health check source (built separately)
+src/healthcheck.ts

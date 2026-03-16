@@ -1,5 +1,7 @@
 #!/usr/bin/env node
 
+import 'dotenv/config'; // Load environment variables from .env file
+
 import { Command } from 'commander';
 import { ProxyServer } from './proxy/server';
 import { VectorMemory } from './memory/vector-memory';

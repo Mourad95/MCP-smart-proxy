@@ -2,6 +2,7 @@ import axios from 'axios'
 
 const API_BASE_URL = '/api'
 
+// Create axios instance with auth token handling
 const api = axios.create({
   baseURL: API_BASE_URL,
   timeout: 10000,
@@ -10,14 +11,108 @@ const api = axios.create({
   },
 })
 
+// Store token in localStorage
+const TOKEN_KEY = 'mcp_dashboard_token'
+
+export const getAuthToken = (): string | null => {
+  return localStorage.getItem(TOKEN_KEY)
+}
+
+export const setAuthToken = (token: string): void => {
+  localStorage.setItem(TOKEN_KEY, token)
+}
+
+export const removeAuthToken = (): void => {
+  localStorage.removeItem(TOKEN_KEY)
+}
+
+// Add auth token to requests if available
+api.interceptors.request.use((config) => {
+  const token = getAuthToken()
+  if (token) {
+    config.headers.Authorization = `Bearer ${token}`
+  }
+  return config
+})
+
 // Add response interceptor for error handling
 api.interceptors.response.use(
   (response) => response.data,
   (error) => {
     console.error('API Error:', error)
+    
+    // Handle 401 Unauthorized errors
+    if (error.response?.status === 401) {
+      // Clear invalid token
+      removeAuthToken()
+      
+      // Only redirect if we're not already on a login page
+      if (!window.location.pathname.includes('/login')) {
+        // Dispatch custom event for login handling
+        window.dispatchEvent(new CustomEvent('auth-required'))
+      }
+    }
+    
     throw error
   }
 )
+
+// Authentication functions
+export const checkAuthStatus = async (): Promise<{ requiresAuth: boolean; hasPassword: boolean }> => {
+  try {
+    const response = await axios.get('/auth/status')
+    return response.data
+  } catch (error) {
+    console.error('Failed to check auth status:', error)
+    return { requiresAuth: false, hasPassword: false }
+  }
+}
+
+export const login = async (password: string): Promise<{ success: boolean; token?: string; message?: string }> => {
+  try {
+    const response = await axios.post('/auth/login', { password })
+    
+    if (response.data.success && response.data.token) {
+      setAuthToken(response.data.token)
+    }
+    
+    return response.data
+  } catch (error) {
+    console.error('Login failed:', error)
+    return { 
+      success: false, 
+      message: error.response?.data?.message || 'Login failed' 
+    }
+  }
+}
+
+export const verifyToken = async (): Promise<boolean> => {
+  const token = getAuthToken()
+  if (!token) return false
+  
+  try {
+    const response = await axios.get('/auth/verify', {
+      headers: { Authorization: `Bearer ${token}` }
+    })
+    return response.data.success === true
+  } catch (error) {
+    return false
+  }
+}
+
+export const logout = async (): Promise<void> => {
+  const token = getAuthToken()
+  if (token) {
+    try {
+      await axios.post('/auth/logout', {}, {
+        headers: { Authorization: `Bearer ${token}` }
+      })
+    } catch (error) {
+      console.error('Logout failed:', error)
+    }
+  }
+  removeAuthToken()
+}
 
 export interface DashboardData {
   optimization: {

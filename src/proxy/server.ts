@@ -125,9 +125,15 @@ export class ProxyServer {
       });
     });
     
-    // Authentication routes
+    // Authentication routes (public)
     const authRouter = this.dashboardAuth.createMiddleware();
     this.app.use(authRouter);
+    
+    // Global API authentication middleware
+    const apiAuthMiddleware = this.dashboardAuth.createBasicAuthMiddleware();
+    
+    // Apply auth middleware to all API routes
+    this.app.use('/api', apiAuthMiddleware);
     
     // Metrics endpoint (protected if auth required)
     this.app.get('/metrics', this.dashboardAuth.createBasicAuthMiddleware(), (req, res) => {
@@ -229,7 +235,7 @@ export class ProxyServer {
     
     // Dashboard (if enabled, protected)
     if (this.config.analytics.dashboardEnabled) {
-      this.app.get('/dashboard', this.dashboardAuth.createBasicAuthMiddleware(), (req, res) => {
+      this.app.get('/dashboard', apiAuthMiddleware, (req, res) => {
         // Serve the React dashboard build
         const dashboardPath = path.join(__dirname, '../../dashboard/dist');
         

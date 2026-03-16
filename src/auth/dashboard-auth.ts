@@ -249,38 +249,46 @@ export class DashboardAuth {
   
   /**
    * Create simple basic auth middleware (alternative)
+   * This middleware protects routes when DASHBOARD_PASSWORD is set
+   * If no password is configured, access is unrestricted (development mode)
    */
   createBasicAuthMiddleware() {
     return (req: express.Request, res: express.Response, next: express.NextFunction) => {
-      // Skip auth if no password configured
+      // Skip auth if no password configured (development mode)
       if (!this.isAuthRequired()) {
         return next()
       }
       
       const authHeader = req.headers.authorization
       
-      if (!authHeader || !authHeader.startsWith('Basic ')) {
-        res.set('WWW-Authenticate', 'Basic realm="MCP Proxy Dashboard"')
-        return res.status(401).json({ 
-          success: false, 
-          message: 'Authentication required' 
-        })
+      // Check for Bearer token (JWT) first
+      if (authHeader && authHeader.startsWith('Bearer ')) {
+        const token = authHeader.substring(7)
+        if (this.verifyToken(token)) {
+          return next()
+        }
       }
       
-      const base64Credentials = authHeader.substring(6)
-      const credentials = Buffer.from(base64Credentials, 'base64').toString('ascii')
-      const [username, password] = credentials.split(':')
-      
-      // Basic auth with empty username (just password)
-      if (password === this.config.password) {
-        next()
-      } else {
-        res.set('WWW-Authenticate', 'Basic realm="MCP Proxy Dashboard"')
-        res.status(401).json({ 
-          success: false, 
-          message: 'Invalid credentials' 
-        })
+      // Check for Basic auth
+      if (authHeader && authHeader.startsWith('Basic ')) {
+        const base64Credentials = authHeader.substring(6)
+        const credentials = Buffer.from(base64Credentials, 'base64').toString('ascii')
+        const [username, password] = credentials.split(':')
+        
+        // Basic auth with empty username (just password)
+        if (password === this.config.password) {
+          return next()
+        }
       }
+      
+      // No valid authentication found
+      res.set('WWW-Authenticate', 'Basic realm="MCP Proxy Dashboard"')
+      return res.status(401).json({ 
+        success: false, 
+        message: 'Authentication required',
+        requiresAuth: true,
+        hasPassword: !!this.config.password
+      })
     }
   }
   

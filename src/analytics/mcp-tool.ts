@@ -257,7 +257,7 @@ export class OptimizationStatsTool {
         requests: periodRequests,
         tokensSaved: periodTokensSaved,
         averageSavingsPercent: periodTokensSaved > 0 ? 
-          (periodTokensSaved / (periodTokensSaved + periodRequests * 500)) * 100 : 0 // Estimate
+          (periodTokensSaved / (periodTokensSaved + periodRequests * 500)) * 100 : 0
       },
       hourlyBreakdown: {
         requests: filteredHours,
@@ -276,10 +276,10 @@ export class OptimizationStatsTool {
    * Handle export_optimization_data tool
    */
   private async handleExportOptimizationData(args: any): Promise<any> {
-    const { path = 'optimization-export.json', includeRaw = true } = args;
+    const { path: exportPathArg = 'optimization-export.json', includeRaw = true } = args;
     
     try {
-      const exportPath = path.startsWith('/') ? path : `./data/${path}`;
+      const exportPath = exportPathArg.startsWith('/') ? exportPathArg : `./data/${exportPathArg}`;
       this.statsManager.exportStats(exportPath);
       
       return {

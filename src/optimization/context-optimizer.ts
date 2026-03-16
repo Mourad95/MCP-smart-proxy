@@ -181,7 +181,7 @@ export class ContextOptimizer {
     // Record metrics
     const metrics: OptimizationMetrics = {
       timestamp: new Date(),
-      query,
+      query: query || '',
       originalTokens: this.estimateTokens(originalContext),
       optimizedTokens: this.estimateTokens(optimizedContext),
       tokensSaved: optimizedContext.metadata.tokensSaved,
@@ -414,5 +414,21 @@ export class ContextOptimizer {
       size: this.cache.size,
       hitRate: Math.round(hitRate * 10) / 10
     };
+  }
+
+  /**
+   * Get formatted stats from the stats manager (for dashboard / API)
+   */
+  getFormattedStats(): ReturnType<OptimizationStatsManager['getFormattedStats']> {
+    return this.statsManager.getFormattedStats();
+  }
+
+  /**
+   * Reset persisted statistics (for dashboard / API)
+   */
+  resetStats(): void {
+    this.statsManager.resetStats();
+    this.metrics = [];
+    this.cache.clear();
   }
 }

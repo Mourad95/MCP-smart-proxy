@@ -8,12 +8,11 @@ import AuthGuard from './components/AuthGuard'
 
 function App() {
   return (
-    <Router>
+    <Router basename="/dashboard">
       <AuthGuard>
         <Layout>
           <Routes>
-            <Route path="/" element={<Navigate to="/dashboard" replace />} />
-            <Route path="/dashboard" element={<Dashboard />} />
+            <Route path="/" element={<Dashboard />} />
             <Route path="/optimization" element={<OptimizationStats />} />
             <Route path="/security" element={<SecurityMonitoring />} />
             <Route path="/servers" element={<ServerStatus />} />

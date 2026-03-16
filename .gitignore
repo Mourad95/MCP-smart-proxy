@@ -44,5 +44,12 @@ Thumbs.db
 tmp/
 temp/
 
+# Backup files
+*.backup
+
+# Local data / model cache
+data/
+Xenova/
+
 # Test outputs
 test-results/

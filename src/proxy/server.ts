@@ -137,9 +137,11 @@ export class ProxyServer {
     
     // Metrics endpoint (protected if auth required)
     this.app.get('/metrics', this.dashboardAuth.createBasicAuthMiddleware(), (req, res) => {
+      res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
+      res.setHeader('Pragma', 'no-cache');
+      res.setHeader('Expires', '0');
       const metrics = this.contextOptimizer.getMetrics();
       const cacheStats = this.contextOptimizer.getCacheStats();
-      
       res.json({
         optimization: {
           totalRequests: metrics.length,
@@ -155,7 +157,55 @@ export class ProxyServer {
         recentRequests: metrics.slice(-10)
       });
     });
-    
+
+    // Detailed stats for dashboard (hourly breakdown, top tools)
+    this.app.get('/api/stats', this.dashboardAuth.createBasicAuthMiddleware(), (req, res) => {
+      res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
+      res.setHeader('Pragma', 'no-cache');
+      res.setHeader('Expires', '0');
+      try {
+        const formatted = this.contextOptimizer.getFormattedStats();
+        res.json(formatted);
+      } catch (error) {
+        console.error('Failed to get stats:', error);
+        res.status(500).json({ error: 'Failed to get stats' });
+      }
+    });
+
+    // Reset optimization statistics (dashboard)
+    this.app.post('/api/stats/reset', this.dashboardAuth.createBasicAuthMiddleware(), (req, res) => {
+      try {
+        this.contextOptimizer.resetStats();
+        res.json({ success: true, message: 'Statistics have been reset successfully' });
+      } catch (error) {
+        console.error('Failed to reset stats:', error);
+        res.status(500).json({ error: 'Failed to reset stats' });
+      }
+    });
+
+    // Server list with connection status for dashboard
+    this.app.get('/api/servers', this.dashboardAuth.createBasicAuthMiddleware(), (req, res) => {
+      res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
+      res.setHeader('Pragma', 'no-cache');
+      res.setHeader('Expires', '0');
+      try {
+        const servers = this.config.mcpServers.map((s) => ({
+          name: s.name,
+          url: s.url,
+          connected: this.serverConnections.has(s.name),
+          lastSeen: new Date().toISOString(),
+          requests: 0,
+          errors: 0,
+          responseTime: 0,
+          tools: [] as Array<{ name: string; description: string }>
+        }));
+        res.json(servers);
+      } catch (error) {
+        console.error('Failed to get servers:', error);
+        res.status(500).json({ error: 'Failed to get servers' });
+      }
+    });
+
     // Report export endpoints (protected)
     this.app.get('/api/reports/formats', this.dashboardAuth.createBasicAuthMiddleware(), (req, res) => {
       try {
@@ -210,12 +260,14 @@ export class ProxyServer {
         const filePath = path.join('./data/reports', filename);
         
         if (!fs.existsSync(filePath)) {
-          return res.status(404).json({ error: 'Report not found' });
+          res.status(404).json({ error: 'Report not found' });
+          return;
         }
         
         // Validate filename to prevent directory traversal
         if (!filename.match(/^optimization-report-\d{4}-\d{2}-\d{2}-\d{6}\.(json|csv)$/)) {
-          return res.status(400).json({ error: 'Invalid filename' });
+          res.status(400).json({ error: 'Invalid filename' });
+          return;
         }
         
         const fileExt = path.extname(filename).toLowerCase();
@@ -235,15 +287,20 @@ export class ProxyServer {
     
     // Dashboard (if enabled, protected)
     if (this.config.analytics.dashboardEnabled) {
-      this.app.get('/dashboard', apiAuthMiddleware, (req, res) => {
-        // Serve the React dashboard build
-        const dashboardPath = path.join(__dirname, '../../dashboard/dist');
-        
-        if (fs.existsSync(dashboardPath)) {
-          // Serve static files from dashboard build
+      const dashboardPath = path.join(__dirname, '../../dashboard/dist');
+      if (fs.existsSync(dashboardPath)) {
+        // Serve dashboard assets under /dashboard/assets/* (must be before GET /dashboard)
+        this.app.use('/dashboard', apiAuthMiddleware, express.static(dashboardPath, { index: false }));
+        // SPA: serve index.html for /dashboard and /dashboard/* so routing and assets work
+        this.app.get('/dashboard', apiAuthMiddleware, (req, res) => {
           res.sendFile(path.join(dashboardPath, 'index.html'));
-        } else {
-          // Fallback to simple dashboard
+        });
+        this.app.get('/dashboard/*', apiAuthMiddleware, (req, res) => {
+          res.sendFile(path.join(dashboardPath, 'index.html'));
+        });
+      } else {
+        // Fallback when dashboard is not built
+        this.app.get('/dashboard', apiAuthMiddleware, (req, res) => {
           res.send(`
             <!DOCTYPE html>
             <html>
@@ -258,6 +315,7 @@ export class ProxyServer {
               </head>
               <body>
                 <h1>MCP Smart Proxy Dashboard</h1>
+                <p>Run <code>make build</code> to build the full dashboard.</p>
                 <div class="card">
                   <h2>Optimization Metrics</h2>
                   <div class="metric">Total Requests: <span class="metric-value" id="totalRequests">0</span></div>
@@ -274,31 +332,20 @@ export class ProxyServer {
                     try {
                       const response = await fetch('/metrics');
                       const data = await response.json();
-                      
                       document.getElementById('totalRequests').textContent = data.optimization.totalRequests;
                       document.getElementById('avgSavings').textContent = data.optimization.averageSavings.toFixed(1) + '%';
                       document.getElementById('cacheHitRate').textContent = data.optimization.cache.hitRate + '%';
                       document.getElementById('configuredServers').textContent = data.servers.configured;
                       document.getElementById('connectedServers').textContent = data.servers.connected;
-                    } catch (error) {
-                      console.error('Failed to fetch metrics:', error);
-                    }
+                    } catch (error) { console.error('Failed to fetch metrics:', error); }
                   }
-                  
-                  // Update every 5 seconds
                   updateMetrics();
                   setInterval(updateMetrics, 5000);
                 </script>
               </body>
             </html>
           `);
-        }
-      });
-      
-      // Serve static dashboard files
-      const dashboardStaticPath = path.join(__dirname, '../../dashboard/dist');
-      if (fs.existsSync(dashboardStaticPath)) {
-        this.app.use('/dashboard-static', express.static(dashboardStaticPath));
+        });
       }
     }
     
@@ -310,12 +357,13 @@ export class ProxyServer {
         
         const server = this.config.mcpServers.find(s => s.name === serverName);
         if (!server) {
-          return res.status(404).json({
+          res.status(404).json({
             error: {
               code: 404,
               message: `Server not found: ${serverName}`
             }
           });
+          return;
         }
         
         // Forward request to server
@@ -642,14 +690,25 @@ export class ProxyServer {
   private async forwardRequest(server: MCPServerConfig, request: MCPRequest): Promise<MCPResponse> {
     // Simple HTTP forwarding implementation
     // In production, you'd want proper error handling and timeout management
-    const response = await fetch(server.url, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(request),
-      timeout: server.timeout || 30000
-    });
+    // Note: fetch doesn't support timeout directly, use AbortController
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), server.timeout || 30000);
     
-    return response.json();
+    try {
+      const response = await fetch(server.url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(request),
+        signal: controller.signal
+      });
+      
+      clearTimeout(timeoutId);
+      const data = await response.json();
+      return data as MCPResponse;
+    } catch (error) {
+      clearTimeout(timeoutId);
+      throw error;
+    }
   }
   
   /**

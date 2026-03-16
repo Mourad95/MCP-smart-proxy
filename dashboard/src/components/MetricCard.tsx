@@ -4,13 +4,18 @@ import { FiTrendingUp, FiTrendingDown } from 'react-icons/fi'
 interface MetricCardProps {
   title: string
   value: string
-  change: string
+  /** Trend text (e.g. "+12%" or "All OK"). Omit when no trend data. */
+  change?: string
   icon: IconType
   color: 'primary' | 'success' | 'warning' | 'danger'
   description: string
+  /** Footer label. Omit to hide footer. */
+  footerLabel?: string
+  /** Footer value. Omit when no trend data. */
+  footerValue?: string
 }
 
-const MetricCard = ({ title, value, change, icon: Icon, color, description }: MetricCardProps) => {
+const MetricCard = ({ title, value, change, icon: Icon, color, description, footerLabel, footerValue }: MetricCardProps) => {
   const colorClasses = {
     primary: {
       bg: 'bg-primary-100',
@@ -34,7 +39,8 @@ const MetricCard = ({ title, value, change, icon: Icon, color, description }: Me
     }
   }
 
-  const isPositive = !change.includes('-') && !change.toLowerCase().includes('issues')
+  const showChange = change != null && change !== ''
+  const isPositive = showChange && !change.includes('-') && !change.toLowerCase().includes('issues')
 
   return (
     <div className={`metric-card border-l-4 ${colorClasses[color].border}`}>
@@ -48,26 +54,30 @@ const MetricCard = ({ title, value, change, icon: Icon, color, description }: Me
               <p className="text-sm font-medium text-gray-600">{title}</p>
               <div className="flex items-center mt-1">
                 <p className="text-2xl font-bold text-gray-900">{value}</p>
-                <div className={`ml-3 flex items-center ${isPositive ? 'text-success-600' : 'text-danger-600'}`}>
-                  {isPositive ? (
-                    <FiTrendingUp className="h-4 w-4 mr-1" />
-                  ) : (
-                    <FiTrendingDown className="h-4 w-4 mr-1" />
-                  )}
-                  <span className="text-sm font-medium">{change}</span>
-                </div>
+                {showChange && (
+                  <div className={`ml-3 flex items-center ${isPositive ? 'text-success-600' : 'text-danger-600'}`}>
+                    {isPositive ? (
+                      <FiTrendingUp className="h-4 w-4 mr-1" />
+                    ) : (
+                      <FiTrendingDown className="h-4 w-4 mr-1" />
+                    )}
+                    <span className="text-sm font-medium">{change}</span>
+                  </div>
+                )}
               </div>
             </div>
           </div>
           <p className="text-sm text-gray-500 mt-3">{description}</p>
         </div>
       </div>
-      <div className="mt-4 pt-4 border-t border-gray-100">
-        <div className="flex items-center justify-between text-sm">
-          <span className="text-gray-500">Last 24h</span>
-          <span className="font-medium text-gray-900">+12.5%</span>
+      {(footerLabel != null || footerValue != null) && (
+        <div className="mt-4 pt-4 border-t border-gray-100">
+          <div className="flex items-center justify-between text-sm">
+            <span className="text-gray-500">{footerLabel ?? '—'}</span>
+            <span className="font-medium text-gray-900">{footerValue ?? '—'}</span>
+          </div>
         </div>
-      </div>
+      )}
     </div>
   )
 }

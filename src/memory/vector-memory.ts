@@ -1,7 +1,7 @@
 import { LocalIndex } from 'vectra';
 import { pipeline } from '@xenova/transformers';
-import fs from 'fs';
-import path from 'path';
+import * as fs from 'fs';
+import * as path from 'path';
 import { VectorMemoryItem } from '../types/mcp-types';
 
 /**
@@ -113,16 +113,16 @@ export class VectorMemory {
       })
       .slice(0, limit)
       .map(result => ({
-        id: result.item.metadata.id,
-        text: result.item.metadata.text,
+        id: String(result.item.metadata.id),
+        text: String(result.item.metadata.text),
         embedding: result.item.vector,
         metadata: {
-          type: result.item.metadata.type,
-          server: result.item.metadata.server,
-          toolName: result.item.metadata.toolName,
-          timestamp: new Date(result.item.metadata.timestamp),
-          usageCount: result.item.metadata.usageCount || 0,
-          lastUsed: new Date(result.item.metadata.lastUsed || result.item.metadata.timestamp)
+          type: String(result.item.metadata.type) as 'tool' | 'resource' | 'conversation' | 'query',
+          server: result.item.metadata.server ? String(result.item.metadata.server) : undefined,
+          toolName: result.item.metadata.toolName ? String(result.item.metadata.toolName) : undefined,
+          timestamp: new Date(String(result.item.metadata.timestamp)),
+          usageCount: Number(result.item.metadata.usageCount || 0),
+          lastUsed: new Date(String(result.item.metadata.lastUsed || result.item.metadata.timestamp))
         },
         score: result.score
       }));
@@ -182,8 +182,7 @@ export class VectorMemory {
     for (const message of messages) {
       const text = `${message.role}: ${message.content}`;
       const id = await this.addItem(text, {
-        type: 'conversation',
-        context
+        type: 'conversation'
       });
       ids.push(id);
     }
@@ -274,16 +273,16 @@ export class VectorMemory {
     const results = await this.index.queryItems(queryEmbedding, limit);
     
     const items = results.map(result => ({
-      id: result.item.metadata.id,
-      text: result.item.metadata.text,
+      id: String(result.item.metadata.id),
+      text: String(result.item.metadata.text),
       embedding: result.item.vector,
       metadata: {
-        type: result.item.metadata.type,
-        server: result.item.metadata.server,
-        toolName: result.item.metadata.toolName,
-        timestamp: new Date(result.item.metadata.timestamp),
-        usageCount: result.item.metadata.usageCount || 0,
-        lastUsed: new Date(result.item.metadata.lastUsed || result.item.metadata.timestamp)
+        type: String(result.item.metadata.type) as 'tool' | 'resource' | 'conversation' | 'query',
+        server: result.item.metadata.server ? String(result.item.metadata.server) : undefined,
+        toolName: result.item.metadata.toolName ? String(result.item.metadata.toolName) : undefined,
+        timestamp: new Date(String(result.item.metadata.timestamp)),
+        usageCount: Number(result.item.metadata.usageCount || 0),
+        lastUsed: new Date(String(result.item.metadata.lastUsed || result.item.metadata.timestamp))
       },
       score: result.score
     }));

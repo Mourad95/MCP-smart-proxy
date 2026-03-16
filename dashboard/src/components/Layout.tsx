@@ -1,4 +1,4 @@
-import { ReactNode, useState } from 'react'
+import { ReactNode, useState, useEffect } from 'react'
 import { Link, useLocation } from 'react-router-dom'
 import { 
   FiHome, 
@@ -11,27 +11,94 @@ import {
   FiDollarSign,
   FiClock
 } from 'react-icons/fi'
+import axios from 'axios'
+import { api, getAuthToken } from '../services/api'
 
 interface LayoutProps {
   children: ReactNode
 }
 
+function formatUptime(startTimeStr: string | undefined): string {
+  if (!startTimeStr) return '—'
+  const start = new Date(startTimeStr).getTime()
+  const now = Date.now()
+  const ms = Math.max(0, now - start)
+  const h = Math.floor(ms / (1000 * 60 * 60))
+  const m = Math.floor((ms % (1000 * 60 * 60)) / (1000 * 60))
+  if (h >= 24) {
+    const d = Math.floor(h / 24)
+    return `${d}d ${h % 24}h`
+  }
+  return `${h}h ${m}m`
+}
+
+function formatRequests(n: number): string {
+  if (n >= 1000) return `${(n / 1000).toFixed(1)}k`
+  return String(n)
+}
+
 const Layout = ({ children }: LayoutProps) => {
   const [sidebarOpen, setSidebarOpen] = useState(false)
   const location = useLocation()
+  const [sidebarStats, setSidebarStats] = useState<{
+    uptime: string
+    servers: string
+    savings: string
+    requests: string
+  }>({ uptime: '—', servers: '—', savings: '—', requests: '—' })
+  const [sidebarLastUpdated, setSidebarLastUpdated] = useState<Date | null>(null)
+
+  useEffect(() => {
+    let cancelled = false
+    const load = async () => {
+      try {
+        const token = getAuthToken()
+        const authHeaders = token ? { Authorization: `Bearer ${token}` } : {}
+        const [metricsRes, statsRes] = await Promise.all([
+          axios.get<{
+            optimization?: { totalRequests?: number; averageSavings?: number }
+            servers?: { configured?: number; connected?: number }
+          }>('/metrics', { headers: authHeaders }),
+          api.get<{ raw?: { startTime?: string }; details?: { estimatedCostSaved?: string } }>('/stats').catch(() => null)
+        ])
+        if (cancelled) return
+        const m = metricsRes.data
+        const totalRequests = m?.optimization?.totalRequests ?? 0
+        const connected = m?.servers?.connected ?? 0
+        const configured = m?.servers?.configured ?? 0
+        const averageSavings = m?.optimization?.averageSavings ?? 0
+        const startTime = statsRes?.raw?.startTime
+        setSidebarStats({
+          uptime: formatUptime(startTime),
+          servers: configured ? `${connected}/${configured}` : (connected ? String(connected) : '—'),
+          savings: averageSavings > 0 ? `${averageSavings.toFixed(0)}%` : '—',
+          requests: formatRequests(totalRequests)
+        })
+        setSidebarLastUpdated(new Date())
+      } catch {
+        if (!cancelled) setSidebarStats({ uptime: '—', servers: '—', savings: '—', requests: '—' })
+      }
+    }
+    load()
+    const t = setInterval(load, 30000)
+    return () => {
+      cancelled = true
+      clearInterval(t)
+    }
+  }, [])
 
   const navigation = [
-    { name: 'Dashboard', href: '/dashboard', icon: FiHome },
+    { name: 'Dashboard', href: '/', icon: FiHome },
     { name: 'Optimization', href: '/optimization', icon: FiBarChart2 },
     { name: 'Security', href: '/security', icon: FiShield },
     { name: 'Servers', href: '/servers', icon: FiServer },
   ]
 
   const stats = [
-    { label: 'Uptime', value: '24h 15m', icon: FiClock, color: 'text-primary-600' },
-    { label: 'Active Servers', value: '3', icon: FiServer, color: 'text-success-600' },
-    { label: 'Token Savings', value: '72%', icon: FiDollarSign, color: 'text-warning-600' },
-    { label: 'Requests', value: '1.2k', icon: FiActivity, color: 'text-danger-600' },
+    { label: 'Uptime', value: sidebarStats.uptime, icon: FiClock, color: 'text-primary-600' },
+    { label: 'Active Servers', value: sidebarStats.servers, icon: FiServer, color: 'text-success-600' },
+    { label: 'Token Savings', value: sidebarStats.savings, icon: FiDollarSign, color: 'text-warning-600' },
+    { label: 'Requests', value: sidebarStats.requests, icon: FiActivity, color: 'text-danger-600' },
   ]
 
   return (
@@ -59,8 +126,8 @@ const Layout = ({ children }: LayoutProps) => {
                 <span className="text-xl font-bold text-gray-900">MCP Proxy</span>
               </div>
             </div>
-            <div className="mt-5 h-0 flex-1 overflow-y-auto">
-              <nav className="space-y-1 px-2">
+            <div className="mt-5 flex flex-1 flex-col overflow-y-auto">
+              <nav className="flex-1 space-y-1 px-2 pb-4">
                 {navigation.map((item) => {
                   const Icon = item.icon
                   const isActive = location.pathname === item.href
@@ -81,6 +148,27 @@ const Layout = ({ children }: LayoutProps) => {
                   )
                 })}
               </nav>
+              <div className="border-t border-gray-200 p-4">
+                <div className="space-y-3">
+                  {stats.map((stat) => {
+                    const Icon = stat.icon
+                    return (
+                      <div key={stat.label} className="flex items-center justify-between">
+                        <div className="flex items-center">
+                          <Icon className={`h-4 w-4 ${stat.color} mr-2`} />
+                          <span className="text-sm text-gray-600">{stat.label}</span>
+                        </div>
+                        <span className="text-sm font-semibold text-gray-900">{stat.value}</span>
+                      </div>
+                    )
+                  })}
+                </div>
+                {sidebarLastUpdated && (
+                  <p className="text-xs text-gray-500 mt-3">
+                    Dernière MAJ {sidebarLastUpdated.toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit', second: '2-digit' })}
+                  </p>
+                )}
+              </div>
             </div>
           </div>
         </div>
@@ -133,6 +221,11 @@ const Layout = ({ children }: LayoutProps) => {
                   )
                 })}
               </div>
+              {sidebarLastUpdated && (
+                <p className="text-xs text-gray-500 mt-3">
+                  Dernière MAJ {sidebarLastUpdated.toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit', second: '2-digit' })}
+                </p>
+              )}
             </div>
           </div>
         </div>

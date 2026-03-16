@@ -252,7 +252,12 @@ export class ReportExporter {
     tokensSaved: number
     savingsPercent: number
   }> {
-    const breakdown = []
+    const breakdown: Array<{
+      hour: string
+      requests: number
+      tokensSaved: number
+      savingsPercent: number
+    }> = []
     
     Object.entries(stats.requestsByHour).forEach(([hour, requestCount]) => {
       const requests = requestCount as number
@@ -402,7 +407,8 @@ export class ReportExporter {
     }
     
     // Server recommendations
-    const errorRate = (Object.values(stats.toolsUsage).reduce((sum: number, count: number) => sum + count, 0) / stats.totalRequests) * 100
+    const toolValues = Object.values(stats.toolsUsage) as number[]
+    const errorRate = (toolValues.reduce((sum: number, count: number) => sum + count, 0) / stats.totalRequests) * 100
     if (errorRate > 5) {
       recommendations.push({
         type: 'server',

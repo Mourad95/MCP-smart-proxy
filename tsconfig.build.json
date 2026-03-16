@@ -1,0 +1,28 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "outDir": "./dist",
+    "noEmit": false,
+    "skipLibCheck": true,
+    "strict": false,
+    "noUnusedLocals": false,
+    "noUnusedParameters": false
+  },
+  "include": [
+    "src/index.ts",
+    "src/proxy/server.ts",
+    "src/memory/vector-memory.ts",
+    "src/optimization/context-optimizer.ts",
+    "src/config/config-loader.ts",
+    "src/types/mcp-types.ts",
+    "src/auth/dashboard-auth.ts",
+    "src/utils/signal-handler.ts",
+    "src/healthcheck.ts"
+  ],
+  "exclude": [
+    "node_modules",
+    "dist",
+    "src/analytics/**/*",
+    "src/security/**/*"
+  ]
+}

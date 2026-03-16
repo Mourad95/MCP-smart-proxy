@@ -5,12 +5,19 @@
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
   "bin": {
-    "mcp-smart-proxy": "dist/cli.js"
+    "mcp-smart-proxy": "dist/index.js"
   },
+  "files": [
+    "dist",
+    "dashboard/dist",
+    "config",
+    "README.md",
+    "LICENSE"
+  ],
   "scripts": {
     "build": "tsc && npm run build:healthcheck",
     "build:healthcheck": "tsc src/healthcheck.ts --outDir dist --module commonjs --target es2022",
-    "start": "node dist/index.js",
+    "start": "node dist/index.js start",
     "start:prod": "NODE_ENV=production node dist/index.js start --config ./config/production.json",
     "dev": "ts-node src/index.ts",
     "test": "jest",
@@ -28,7 +35,8 @@
     "lint": "eslint src/**/*.ts",
     "format": "prettier --write src/**/*.ts",
     "prepare": "npm run build",
-    "prepublishOnly": "npm test"
+    "prepublishOnly": "npm run build:full",
+    "build:full": "npm run build && cd dashboard && npm run build"
   },
   "keywords": [
     "mcp",
@@ -47,12 +55,12 @@
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "https://github.com/openclaw-community/mcp-smart-proxy.git"
+    "url": "https://github.com/Mourad95/MCP-smart-proxy.git"
   },
   "bugs": {
-    "url": "https://github.com/openclaw-community/mcp-smart-proxy/issues"
+    "url": "https://github.com/Mourad95/MCP-smart-proxy/issues"
   },
-  "homepage": "https://github.com/openclaw-community/mcp-smart-proxy#readme",
+  "homepage": "https://github.com/Mourad95/MCP-smart-proxy#readme",
   "engines": {
     "node": ">=18.0.0"
   },
@@ -60,8 +68,11 @@
     "@xenova/transformers": "^2.16.0",
     "commander": "^12.0.0",
     "cors": "^2.8.5",
+    "date-fns": "^4.1.0",
+    "dotenv": "^16.3.1",
     "express": "^4.18.2",
     "helmet": "^7.1.0",
+    "jsonwebtoken": "^9.0.2",
     "morgan": "^1.10.0",
     "vectra": "^0.3.0",
     "winston": "^3.11.0",
@@ -72,6 +83,8 @@
     "@types/cors": "^2.8.17",
     "@types/express": "^4.17.21",
     "@types/jest": "^29.5.11",
+    "@types/jsonwebtoken": "^9.0.10",
+    "@types/morgan": "^1.9.10",
     "@types/node": "^20.10.5",
     "@types/ws": "^8.5.10",
     "@typescript-eslint/eslint-plugin": "^6.15.0",

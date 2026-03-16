@@ -15,11 +15,11 @@
  * 2 - Unknown/Starting
  */
 
-import http from 'http';
+import * as http from 'http';
 import { VectorMemory } from './memory/vector-memory';
 import { readConfig } from './config/config-loader';
-import fs from 'fs';
-import path from 'path';
+import * as fs from 'fs';
+import * as path from 'path';
 
 const HEALTHCHECK_PORT = process.env.MCP_PROXY_PORT || '3000';
 const HEALTHCHECK_HOST = 'localhost';

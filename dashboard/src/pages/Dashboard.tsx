@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import React, { useState, useEffect } from 'react'
 import { 
   FiActivity, 
   FiDollarSign, 
@@ -26,7 +26,6 @@ import {
   ResponsiveContainer 
 } from 'recharts'
 import MetricCard from '../components/MetricCard'
-import StatChart from '../components/StatChart'
 import ExportReportButton from '../components/ExportReportButton'
 import { fetchDashboardData, exportOptimizationData } from '../services/api'
 
@@ -58,6 +57,8 @@ interface DashboardData {
     tool: string
     count: number
   }>
+  estimatedCostSaved?: string
+  startTime?: string
 }
 
 const Dashboard = () => {
@@ -92,34 +93,35 @@ const Dashboard = () => {
   const metrics = [
     {
       title: 'Total Requests',
-      value: data?.optimization.totalRequests.toLocaleString() || '0',
-      change: '+12%',
+      value: data?.optimization.totalRequests.toLocaleString() ?? '0',
       icon: FiActivity,
-      color: 'primary',
+      color: 'primary' as const,
       description: 'Total MCP requests processed'
     },
     {
       title: 'Average Savings',
       value: data ? `${data.optimization.averageSavings.toFixed(1)}%` : '0%',
-      change: '+2.5%',
       icon: FiDollarSign,
-      color: 'success',
+      color: 'success' as const,
       description: 'Average token savings per request'
     },
     {
       title: 'Cache Hit Rate',
       value: data ? `${data.optimization.cache.hitRate.toFixed(1)}%` : '0%',
-      change: '+5%',
       icon: FiTrendingUp,
-      color: 'warning',
+      color: 'warning' as const,
       description: 'Percentage of cached responses'
     },
     {
       title: 'Connected Servers',
-      value: `${data?.servers.connected || 0}/${data?.servers.configured || 0}`,
-      change: data?.servers.connected === data?.servers.configured ? 'All OK' : 'Issues',
+      value: data != null
+        ? `${data.servers.connected}/${data.servers.configured}`
+        : '—',
+      change: data && data.servers.configured > 0
+        ? (data.servers.connected === data.servers.configured ? 'All OK' : 'Issues')
+        : undefined,
       icon: FiServer,
-      color: data?.servers.connected === data?.servers.configured ? 'success' : 'danger',
+      color: (data && data.servers.configured > 0 && data.servers.connected === data.servers.configured ? 'success' : 'danger') as 'success' | 'danger',
       description: 'MCP servers status'
     }
   ]
@@ -170,20 +172,11 @@ const Dashboard = () => {
         </div>
         <div className="flex items-center space-x-4 mt-4 sm:mt-0">
           <div className="text-sm text-gray-500">
-            Last updated: {lastUpdated.toLocaleTimeString()}
+            Dernière MAJ {lastUpdated.toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit', second: '2-digit' })}
           </div>
           <ExportReportButton 
             onExport={async (format, period, includeDetails) => {
-              const result = await exportOptimizationData(format)
-              if (result.success && result.url) {
-                // Trigger download
-                const link = document.createElement('a')
-                link.href = result.url
-                link.download = `optimization-report-${new Date().toISOString().slice(0, 10)}.${format}`
-                document.body.appendChild(link)
-                link.click()
-                document.body.removeChild(link)
-              }
+              await exportOptimizationData(format, period, includeDetails)
             }}
           />
           <button
@@ -383,7 +376,11 @@ const Dashboard = () => {
             </div>
             <div className="ml-4">
               <h4 className="text-sm font-medium text-gray-900">Estimated Savings</h4>
-              <p className="text-2xl font-semibold text-gray-900 mt-1">$45.20</p>
+              <p className="text-2xl font-semibold text-gray-900 mt-1">
+                {data?.estimatedCostSaved != null && data.estimatedCostSaved !== ''
+                  ? `$${data.estimatedCostSaved}`
+                  : '$0.00'}
+              </p>
               <p className="text-sm text-gray-600">Based on token usage</p>
             </div>
           </div>
@@ -393,13 +390,29 @@ const Dashboard = () => {
           <div className="flex items-center">
             <div className="flex-shrink-0">
               <div className="h-12 w-12 rounded-lg bg-warning-100 flex items-center justify-center">
-                <FiActivity className="h-6 w-6 text-warning-600" />
+                <FiClock className="h-6 w-6 text-warning-600" />
               </div>
             </div>
             <div className="ml-4">
               <h4 className="text-sm font-medium text-gray-900">Uptime</h4>
-              <p className="text-2xl font-semibold text-gray-900 mt-1">99.8%</p>
-              <p className="text-sm text-gray-600">Last 30 days</p>
+              <p className="text-2xl font-semibold text-gray-900 mt-1">
+                {data?.startTime
+                  ? (() => {
+                      const start = new Date(data.startTime).getTime()
+                      const ms = Math.max(0, Date.now() - start)
+                      const h = Math.floor(ms / (1000 * 60 * 60))
+                      const m = Math.floor((ms % (1000 * 60 * 60)) / (1000 * 60))
+                      if (h >= 24) {
+                        const d = Math.floor(h / 24)
+                        return `${d}d ${h % 24}h`
+                      }
+                      return `${h}h ${m}m`
+                    })()
+                  : '—'}
+              </p>
+              <p className="text-sm text-gray-600">
+                {data?.startTime ? 'Since start' : 'No data yet'}
+              </p>
             </div>
           </div>
         </div>

@@ -8,7 +8,7 @@ import { VectorMemory } from './memory/vector-memory';
 import { ContextOptimizer } from './optimization/context-optimizer';
 import { EnvValidator } from './config/env-validator';
 import { SignalHandler } from './utils/signal-handler';
-import { SecretMasking } from './security/secret-masking';
+// import { SecretMasking } from './security/secret-masking';
 import { readConfig, validateConfig } from './config/config-loader';
 import { ProxyConfig } from './types/mcp-types';
 
@@ -231,7 +231,7 @@ program
         } catch (error) {
           console.log('❌ FAILED');
           if (options.verbose) {
-            console.error(`  Error: ${error.message}`);
+            console.error(`  Error: ${error instanceof Error ? error.message : String(error)}`);
           }
           failed++;
         }
@@ -252,7 +252,7 @@ program
   });
 
 // Test functions
-async function testVectorMemory() {
+async function testVectorMemory(_options?: any) {
   const vectorMemory = new VectorMemory();
   await vectorMemory.initialize();
   
@@ -262,14 +262,14 @@ async function testVectorMemory() {
   }
 }
 
-async function testConfigLoading() {
+async function testConfigLoading(_options?: any) {
   const config = await readConfig('./config/default.json');
   if (!config.port || !config.mcpServers) {
     throw new Error('Invalid configuration structure');
   }
 }
 
-async function testBasicOptimization() {
+async function testBasicOptimization(_options?: any) {
   const vectorMemory = new VectorMemory();
   const optimizer = new ContextOptimizer(vectorMemory, {
     enabled: true,

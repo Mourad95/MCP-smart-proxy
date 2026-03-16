@@ -94,7 +94,8 @@ export class OptimizationStatsManager {
         savedStats.startTime = new Date(savedStats.startTime);
         savedStats.lastUpdate = new Date(savedStats.lastUpdate);
         
-        this.logger.info('Loaded existing optimization stats', {
+        // Logger is not initialized yet here; use console
+        console.info('Loaded existing optimization stats', {
           totalRequests: savedStats.totalRequests,
           totalTokensSaved: savedStats.totalTokensSaved
         });
@@ -102,7 +103,8 @@ export class OptimizationStatsManager {
         return savedStats;
       }
     } catch (error) {
-      this.logger.error('Failed to load optimization stats', { error });
+      // Logger is not initialized yet here; use console
+      console.error('Failed to load optimization stats', { error });
     }
     
     // Return default stats
@@ -120,7 +122,8 @@ export class OptimizationStatsManager {
       lastUpdate: new Date()
     };
     
-    this.logger.info('Created new optimization stats');
+    // Logger is not initialized yet here; use console
+    console.info('Created new optimization stats');
     return defaultStats;
   }
   

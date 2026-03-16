@@ -3,7 +3,7 @@ import axios from 'axios'
 const API_BASE_URL = '/api'
 
 // Create axios instance with auth token handling
-const api = axios.create({
+export const api = axios.create({
   baseURL: API_BASE_URL,
   timeout: 10000,
   headers: {
@@ -142,6 +142,9 @@ export interface DashboardData {
     tool: string
     count: number
   }>
+  /** From /api/stats when available */
+  estimatedCostSaved?: string
+  startTime?: string
 }
 
 export interface OptimizationStats {
@@ -202,67 +205,91 @@ export interface ServerStatus {
 
 export const fetchDashboardData = async (): Promise<DashboardData> => {
   try {
-    // In a real implementation, this would fetch from the proxy API
-    // For now, return mock data that matches the expected structure
-    
-    // Generate mock hourly data for the last 24 hours
-    const hourlyStats = Array.from({ length: 24 }, (_, i) => {
-      const hour = new Date()
-      hour.setHours(hour.getHours() - (23 - i))
-      return {
-        hour: hour.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-        requests: Math.floor(Math.random() * 50) + 20,
-        savings: Math.floor(Math.random() * 10000) + 5000
-      }
-    })
+    const token = getAuthToken()
+    const authHeaders = token ? { Authorization: `Bearer ${token}` } : {}
 
-    // Generate mock recent requests
-    const recentRequests = Array.from({ length: 10 }, (_, i) => {
-      const queries = [
-        'Read file example.txt',
-        'Search for documentation',
-        'List GitHub repositories',
-        'Create new file',
-        'Analyze code structure',
-        'Search web for information',
-        'Get weather forecast',
-        'Translate text to French',
-        'Calculate mathematical expression',
-        'Generate code snippet'
-      ]
-      return {
-        query: queries[i % queries.length],
-        savingsPercent: Math.random() * 50 + 30, // 30-80%
-        responseTime: Math.floor(Math.random() * 200) + 50, // 50-250ms
-        timestamp: new Date(Date.now() - i * 60000).toISOString() // Last 10 minutes
-      }
-    })
+    const [metricsRes, statsRes] = await Promise.all([
+      axios.get<{
+        optimization: { totalRequests: number; averageSavings: number; cache: { size: number; hitRate: number } }
+        servers: { configured: number; connected: number }
+        recentRequests: Array<{ query: string; savingsPercent: number; responseTime: number; timestamp: string; toolsUsed?: string[] }>
+      }>('/metrics', { headers: authHeaders }),
+      api.get<{ summary: string; details: Record<string, unknown>; raw: Record<string, unknown> }>('/stats').catch(() => null)
+    ])
 
-    // Generate mock top tools
-    const topTools = [
-      { tool: 'read_file', count: 142 },
-      { tool: 'search_files', count: 98 },
-      { tool: 'github_repos', count: 76 },
-      { tool: 'web_search', count: 54 },
-      { tool: 'write_file', count: 43 }
-    ]
+    const metrics = metricsRes.data
+    const recentRequests = (metrics.recentRequests || []).map((m) => ({
+      query: m.query || '',
+      savingsPercent: m.savingsPercent ?? 0,
+      responseTime: m.responseTime ?? 0,
+      timestamp: typeof m.timestamp === 'string' ? m.timestamp : new Date(m.timestamp as number).toISOString()
+    }))
+
+    let hourlyStats: Array<{ hour: string; requests: number; savings: number }> = []
+    let topTools: Array<{ tool: string; count: number }> = []
+
+    let estimatedCostSaved: string | undefined
+    let startTime: string | undefined
+    if (statsRes && statsRes.details) {
+      const details = statsRes.details as {
+        topTools?: Array<{ tool: string; count: number }>
+        hourlyBreakdown?: { requests: Array<[string, number]>; savings: Array<[string, number]> }
+        estimatedCostSaved?: string
+      }
+      if (details.topTools?.length) {
+        topTools = details.topTools.slice(0, 5)
+      }
+      if (details.estimatedCostSaved != null) {
+        estimatedCostSaved = String(details.estimatedCostSaved)
+      }
+    }
+    if (statsRes?.raw && typeof (statsRes.raw as { startTime?: string }).startTime === 'string') {
+      startTime = (statsRes.raw as { startTime: string }).startTime
+    }
+    if (statsRes && statsRes.details) {
+      const details = statsRes.details as {
+        hourlyBreakdown?: { requests: Array<[string, number]>; savings: Array<[string, number]> }
+      }
+      const hb = details.hourlyBreakdown
+      if (hb?.requests && hb?.savings) {
+        const byHour = new Map<string, { requests: number; savings: number }>()
+        hb.requests.forEach(([hour, count]) => {
+          byHour.set(hour, { requests: count, savings: 0 })
+        })
+        hb.savings.forEach(([hour, val]) => {
+          const cur = byHour.get(hour) || { requests: 0, savings: 0 }
+          cur.savings = val
+          byHour.set(hour, cur)
+        })
+        hourlyStats = Array.from(byHour.entries())
+          .sort(([a], [b]) => a.localeCompare(b))
+          .slice(-24)
+          .map(([hour, { requests, savings }]) => ({
+            hour: hour.length > 10 ? hour.slice(11, 16) : hour,
+            requests,
+            savings
+          }))
+      }
+    }
 
     return {
       optimization: {
-        totalRequests: 1242,
-        averageSavings: 68.5,
+        totalRequests: metrics.optimization?.totalRequests ?? 0,
+        averageSavings: metrics.optimization?.averageSavings ?? 0,
         cache: {
-          size: 342,
-          hitRate: 72.3
+          size: metrics.optimization?.cache?.size ?? 0,
+          hitRate: metrics.optimization?.cache?.hitRate ?? 0
         }
       },
       servers: {
-        configured: 3,
-        connected: 3
+        configured: metrics.servers?.configured ?? 0,
+        connected: metrics.servers?.connected ?? 0
       },
       recentRequests,
       hourlyStats,
-      topTools
+      topTools,
+      estimatedCostSaved,
+      startTime
     }
   } catch (error) {
     console.error('Failed to fetch dashboard data:', error)
@@ -272,59 +299,37 @@ export const fetchDashboardData = async (): Promise<DashboardData> => {
 
 export const fetchOptimizationStats = async (): Promise<OptimizationStats> => {
   try {
-    // Mock data for optimization stats
-    const hoursRunning = 48.5
-    const totalRequests = 1242
-    const totalTokensSaved = 125800
-    
+    const data = await api.get<{
+      summary: string
+      details: Record<string, unknown>
+      raw: Record<string, unknown>
+    }>('/stats')
+
+    const raw = data.raw || {}
+    const details = (data.details || {}) as Record<string, unknown>
+
     return {
-      summary: `Optimization Statistics:
-• Total Requests: 1,242
-• Total Tokens In: 183,500
-• Total Tokens Out: 57,700
-• Total Tokens Saved: 125,800 (68.5%)
-• Estimated Cost Saved: $1.26
-• Running Since: ${new Date(Date.now() - 48.5 * 60 * 60 * 1000).toLocaleString()}
-• Requests/Hour: 25.6
-• Tokens Saved/Hour: 2,593`,
+      summary: data.summary || 'No statistics yet.',
       details: {
-        hoursRunning: hoursRunning.toFixed(1),
-        requestsPerHour: (totalRequests / hoursRunning).toFixed(1),
-        tokensSavedPerHour: Math.round(totalTokensSaved / hoursRunning),
-        estimatedCostSaved: '1.26',
-        topTools: [
-          { tool: 'read_file', count: 142 },
-          { tool: 'search_files', count: 98 },
-          { tool: 'github_repos', count: 76 },
-          { tool: 'web_search', count: 54 },
-          { tool: 'write_file', count: 43 }
-        ],
-        topQueriesBySavings: [
-          { query: 'Analyze large codebase', savingsPercent: 82.5, count: 12 },
-          { query: 'Search documentation', savingsPercent: 78.3, count: 24 },
-          { query: 'Read configuration files', savingsPercent: 75.6, count: 18 },
-          { query: 'GitHub repository analysis', savingsPercent: 72.1, count: 15 },
-          { query: 'Web search results', savingsPercent: 68.9, count: 22 }
-        ],
+        hoursRunning: String(details.hoursRunning ?? '0'),
+        requestsPerHour: String(details.requestsPerHour ?? '0'),
+        tokensSavedPerHour: Number(details.tokensSavedPerHour ?? 0),
+        estimatedCostSaved: String(details.estimatedCostSaved ?? '0'),
+        topTools: Array.isArray(details.topTools) ? details.topTools as Array<{ tool: string; count: number }> : [],
+        topQueriesBySavings: Array.isArray(details.topQueriesBySavings) ? details.topQueriesBySavings as Array<{ query: string; savingsPercent: number; count: number }> : [],
         hourlyBreakdown: {
-          requests: Array.from({ length: 24 }, (_, i) => [
-            `${i}:00`,
-            Math.floor(Math.random() * 30) + 10
-          ]),
-          savings: Array.from({ length: 24 }, (_, i) => [
-            `${i}:00`,
-            Math.floor(Math.random() * 8000) + 2000
-          ])
+          requests: Array.isArray((details.hourlyBreakdown as { requests?: unknown[] })?.requests) ? (details.hourlyBreakdown as { requests: Array<[string, number]> }).requests : [],
+          savings: Array.isArray((details.hourlyBreakdown as { savings?: unknown[] })?.savings) ? (details.hourlyBreakdown as { savings: Array<[string, number]> }).savings : []
         }
       },
       raw: {
-        totalRequests,
-        totalTokensIn: 183500,
-        totalTokensOut: 57700,
-        totalTokensSaved,
-        averageSavingsPercent: 68.5,
-        startTime: new Date(Date.now() - 48.5 * 60 * 60 * 1000).toISOString(),
-        lastUpdate: new Date().toISOString()
+        totalRequests: Number(raw.totalRequests ?? 0),
+        totalTokensIn: Number(raw.totalTokensIn ?? 0),
+        totalTokensOut: Number(raw.totalTokensOut ?? 0),
+        totalTokensSaved: Number(raw.totalTokensSaved ?? 0),
+        averageSavingsPercent: Number(raw.averageSavingsPercent ?? 0),
+        startTime: typeof raw.startTime === 'string' ? raw.startTime : new Date().toISOString(),
+        lastUpdate: typeof raw.lastUpdate === 'string' ? raw.lastUpdate : new Date().toISOString()
       }
     }
   } catch (error) {
@@ -335,43 +340,13 @@ export const fetchOptimizationStats = async (): Promise<OptimizationStats> => {
 
 export const fetchSecurityMetrics = async (): Promise<SecurityMetrics> => {
   try {
-    // Mock security metrics
+    // No security metrics endpoint yet; return empty structure so UI shows real state
     return {
-      secretsDetected: 42,
-      rateLimitViolations: 3,
-      securityErrors: 1,
-      recentSecurityEvents: [
-        {
-          type: 'secret_detection',
-          message: 'API key detected and masked in response',
-          timestamp: new Date(Date.now() - 300000).toISOString(),
-          severity: 'medium'
-        },
-        {
-          type: 'rate_limit',
-          message: 'Rate limit exceeded for IP 192.168.1.100',
-          timestamp: new Date(Date.now() - 900000).toISOString(),
-          severity: 'low'
-        },
-        {
-          type: 'secret_detection',
-          message: 'Database URL detected and masked',
-          timestamp: new Date(Date.now() - 1800000).toISOString(),
-          severity: 'high'
-        },
-        {
-          type: 'security_error',
-          message: 'Invalid authentication attempt',
-          timestamp: new Date(Date.now() - 3600000).toISOString(),
-          severity: 'medium'
-        }
-      ],
-      secretTypes: [
-        { type: 'api_key', count: 28, lastDetected: new Date().toISOString() },
-        { type: 'database_url', count: 8, lastDetected: new Date(Date.now() - 1800000).toISOString() },
-        { type: 'jwt_token', count: 4, lastDetected: new Date(Date.now() - 3600000).toISOString() },
-        { type: 'email', count: 2, lastDetected: new Date(Date.now() - 7200000).toISOString() }
-      ]
+      secretsDetected: 0,
+      rateLimitViolations: 0,
+      securityErrors: 0,
+      recentSecurityEvents: [],
+      secretTypes: []
     }
   } catch (error) {
     console.error('Failed to fetch security metrics:', error)
@@ -381,67 +356,64 @@ export const fetchSecurityMetrics = async (): Promise<SecurityMetrics> => {
 
 export const fetchServerStatus = async (): Promise<ServerStatus[]> => {
   try {
-    // Mock server status
-    return [
-      {
-        name: 'filesystem',
-        url: 'ws://localhost:8080',
-        connected: true,
-        lastSeen: new Date().toISOString(),
-        requests: 542,
-        errors: 2,
-        responseTime: 45,
-        tools: [
-          { name: 'read_file', description: 'Read contents of a file' },
-          { name: 'write_file', description: 'Write content to a file' },
-          { name: 'list_directory', description: 'List files in a directory' },
-          { name: 'search_files', description: 'Search for files by pattern' }
-        ]
-      },
-      {
-        name: 'github',
-        url: 'ws://localhost:8081',
-        connected: true,
-        lastSeen: new Date(Date.now() - 60000).toISOString(),
-        requests: 324,
-        errors: 0,
-        responseTime: 120,
-        tools: [
-          { name: 'list_repos', description: 'List GitHub repositories' },
-          { name: 'read_file', description: 'Read file from GitHub repository' },
-          { name: 'search_code', description: 'Search code in repositories' },
-          { name: 'create_issue', description: 'Create a new issue' }
-        ]
-      },
-      {
-        name: 'search',
-        url: 'ws://localhost:8082',
-        connected: false,
-        lastSeen: new Date(Date.now() - 300000).toISOString(),
-        requests: 0,
-        errors: 5,
-        responseTime: 0,
-        tools: []
-      }
-    ]
+    const servers = await api.get<Array<{
+      name: string
+      url: string
+      connected: boolean
+      lastSeen: string
+      requests: number
+      errors: number
+      responseTime: number
+      tools: Array<{ name: string; description: string }>
+    }>>('/servers')
+    return Array.isArray(servers) ? servers : []
   } catch (error) {
     console.error('Failed to fetch server status:', error)
     throw error
   }
 }
 
-export const exportOptimizationData = async (format: string = 'json'): Promise<{ success: boolean; url?: string }> => {
+export const exportOptimizationData = async (
+  format: string = 'json',
+  period: string = 'week',
+  includeDetails: boolean = true
+): Promise<{ success: boolean; url?: string }> => {
   try {
-    // In a real implementation, this would trigger a download
-    console.log(`Exporting optimization data in ${format} format`)
-    
-    // Simulate API call
-    await new Promise(resolve => setTimeout(resolve, 1000))
-    
-    return {
-      success: true,
-      url: `/api/export/optimization-${Date.now()}.${format}`
+    const token = getAuthToken()
+    const authHeaders = token ? { Authorization: `Bearer ${token}` } : {}
+
+    const res = await axios.post<{
+      success: boolean
+      report?: { path: string; downloadUrl: string; size?: number }
+    }>(
+      '/api/reports/export',
+      { format, period, includeDetails },
+      { headers: { 'Content-Type': 'application/json', ...authHeaders } }
+    )
+
+    if (!res.data.success || !res.data.report?.downloadUrl) {
+      return { success: false }
     }
+
+    const downloadUrl = res.data.report.downloadUrl
+    const filename = res.data.report.path.split('/').pop() || `optimization-report.${format}`
+
+    const fileRes = await axios.get(downloadUrl, {
+      responseType: 'blob',
+      headers: authHeaders
+    })
+
+    const blob = new Blob([fileRes.data])
+    const url = window.URL.createObjectURL(blob)
+    const link = document.createElement('a')
+    link.href = url
+    link.download = filename
+    document.body.appendChild(link)
+    link.click()
+    document.body.removeChild(link)
+    window.URL.revokeObjectURL(url)
+
+    return { success: true, url: downloadUrl }
   } catch (error) {
     console.error('Failed to export optimization data:', error)
     throw error
@@ -450,15 +422,10 @@ export const exportOptimizationData = async (format: string = 'json'): Promise<{
 
 export const resetStatistics = async (): Promise<{ success: boolean; message: string }> => {
   try {
-    // In a real implementation, this would call the proxy API
-    console.log('Resetting statistics')
-    
-    // Simulate API call
-    await new Promise(resolve => setTimeout(resolve, 500))
-    
+    const data = await api.post<{ success: boolean; message?: string }>('/stats/reset')
     return {
-      success: true,
-      message: 'Statistics have been reset successfully'
+      success: data.success === true,
+      message: data.message ?? (data.success ? 'Statistics have been reset successfully' : 'Reset failed')
     }
   } catch (error) {
     console.error('Failed to reset statistics:', error)

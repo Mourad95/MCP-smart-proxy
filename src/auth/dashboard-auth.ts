@@ -48,8 +48,8 @@ export class DashboardAuth {
         type: 'dashboard',
         timestamp: Date.now()
       },
-      this.config.jwtSecret,
-      { expiresIn: this.config.jwtExpiresIn }
+      this.config.jwtSecret!,
+      { expiresIn: this.config.jwtExpiresIn as jwt.SignOptions['expiresIn'] }
     )
     
     this.tokens.add(token)
@@ -117,7 +117,7 @@ export class DashboardAuth {
     
     // Status endpoint (public)
     router.get('/auth/status', (req, res) => {
-      res.json({
+      return res.json({
         requiresAuth: this.isAuthRequired(),
         hasPassword: !!this.config.password
       })
@@ -152,7 +152,7 @@ export class DashboardAuth {
       }
       
       const token = this.generateToken()
-      res.json({ 
+      return res.json({ 
         success: true, 
         token,
         expiresIn: this.config.jwtExpiresIn
@@ -173,12 +173,12 @@ export class DashboardAuth {
       const token = authHeader.substring(7)
       
       if (this.verifyToken(token)) {
-        res.json({ 
+        return res.json({ 
           success: true,
           valid: true
         })
       } else {
-        res.status(401).json({ 
+        return res.status(401).json({ 
           success: false, 
           message: 'Invalid or expired token' 
         })

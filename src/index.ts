@@ -9,7 +9,6 @@ import { ContextOptimizer } from './optimization/context-optimizer';
 import { SemanticCache } from './cache/semantic-cache';
 import { EnvValidator } from './config/env-validator';
 import { SignalHandler } from './utils/signal-handler';
-// import { SecretMasking } from './security/secret-masking';
 import { readConfig, validateConfig } from './config/config-loader';
 import { ProxyConfig } from './types/mcp-types';
 
@@ -39,10 +38,15 @@ program
       // Load configuration
       const config = await readConfig(options.config);
       
-      // Override config with CLI options
+      // Override config with CLI options and env
       if (options.port) config.port = parseInt(options.port);
       if (options.dashboard) config.analytics.dashboardEnabled = true;
       if (options.verbose) config.logging.level = 'debug';
+      if (process.env.MCP_SECRET_MASKING_ENABLED !== undefined) {
+        config.secretMaskingEnabled = process.env.MCP_SECRET_MASKING_ENABLED === 'true' || process.env.MCP_SECRET_MASKING_ENABLED === '1';
+      } else {
+        config.secretMaskingEnabled = true; // default per SECURITY.md
+      }
       
       // Validate configuration
       const validation = validateConfig(config);

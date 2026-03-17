@@ -47,7 +47,8 @@ const DEFAULT_CONFIG: ProxyConfig = {
     enabled: true,
     retentionDays: 30,
     dashboardEnabled: true
-  }
+  },
+  secretMaskingEnabled: true
 };
 
 /**
@@ -91,7 +92,8 @@ export async function readConfig(configPath: string): Promise<ProxyConfig> {
       analytics: {
         ...DEFAULT_CONFIG.analytics,
         ...config.analytics
-      }
+      },
+      secretMaskingEnabled: config.secretMaskingEnabled ?? DEFAULT_CONFIG.secretMaskingEnabled
     };
     
   } catch (error) {

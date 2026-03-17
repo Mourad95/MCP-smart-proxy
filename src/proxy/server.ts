@@ -21,6 +21,7 @@ import {
   OptimizedContext,
   MCPTool
 } from '../types/mcp-types';
+import { SecretMasking } from '../security/secret-masking';
 
 /**
  * MCP Smart Proxy Server
@@ -39,6 +40,8 @@ export class ProxyServer {
   private reportExporter: ReportExporter;
   private dashboardAuth: DashboardAuth;
   private semanticCache: SemanticCache | null;
+  private secretMasking: SecretMasking;
+  private secretMaskingEnabled: boolean;
 
   constructor(
     private config: ProxyConfig,
@@ -48,6 +51,8 @@ export class ProxyServer {
     semanticCache?: SemanticCache | null
   ) {
     this.semanticCache = semanticCache ?? null;
+    this.secretMasking = new SecretMasking();
+    this.secretMaskingEnabled = config.secretMaskingEnabled !== false;
     this.app = express();
     this.httpServer = createServer(this.app);
     this.wss = new WebSocketServer({ server: this.httpServer });
@@ -109,6 +114,22 @@ export class ProxyServer {
     console.log('🛑 Proxy server stopped');
   }
   
+  /**
+   * Apply secret masking to response before sending to client (if enabled).
+   * Returns the response to send and stats for optional headers (e.g. X-Secrets-Masked).
+   */
+  private prepareResponseForClient(response: MCPResponse): {
+    response: MCPResponse;
+    secretsDetected: number;
+    secretTypes: string[];
+  } {
+    if (!this.secretMaskingEnabled || !response) {
+      return { response, secretsDetected: 0, secretTypes: [] };
+    }
+    const { masked, secretsDetected, secretTypes } = this.secretMasking.maskResponse(response);
+    return { response: masked, secretsDetected, secretTypes };
+  }
+
   /**
    * Setup Express middleware
    */
@@ -552,7 +573,9 @@ export class ProxyServer {
         
         // Forward request to server
         const response = await this.forwardRequest(server, request);
-        res.json(response);
+        const { response: toSend, secretsDetected } = this.prepareResponseForClient(response);
+        if (secretsDetected > 0) res.setHeader('X-Secrets-Masked', 'true');
+        res.json(toSend);
         
       } catch (error) {
         console.error('Proxy request failed:', error);
@@ -732,8 +755,8 @@ export class ProxyServer {
         },
         id: message.id
       };
-      
-      ws.send(JSON.stringify(response));
+      const { response: toSend } = this.prepareResponseForClient(response);
+      ws.send(JSON.stringify(toSend));
       
     } catch (error) {
       console.error('Initialize failed:', error);
@@ -766,8 +789,8 @@ export class ProxyServer {
         result: { tools },
         id: message.id
       };
-      
-      ws.send(JSON.stringify(response));
+      const { response: toSend } = this.prepareResponseForClient(response);
+      ws.send(JSON.stringify(toSend));
       
     } catch (error) {
       console.error('Tools/list failed:', error);
@@ -813,7 +836,8 @@ export class ProxyServer {
         const cached = await this.semanticCache!.get(embedding, server.name);
         if (cached.hit) {
           const response: MCPResponse = { ...cached.response, id: message.id };
-          ws.send(JSON.stringify(response));
+          const { response: toSend } = this.prepareResponseForClient(response);
+          ws.send(JSON.stringify(toSend));
           return;
         }
       }
@@ -834,7 +858,8 @@ export class ProxyServer {
         );
       }
 
-      ws.send(JSON.stringify(response));
+      const { response: toSend } = this.prepareResponseForClient(response);
+      ws.send(JSON.stringify(toSend));
     } catch (error) {
       console.error('Tool call failed:', error);
       this.sendError(ws, 'Tool call failed', message.id);
@@ -855,8 +880,8 @@ export class ProxyServer {
         result,
         id: message.id
       };
-      
-      ws.send(JSON.stringify(response));
+      const { response: toSend } = this.prepareResponseForClient(response);
+      ws.send(JSON.stringify(toSend));
       
       // Log the stats query
       console.log(`Stats tool executed: ${name}`, {
@@ -886,7 +911,8 @@ export class ProxyServer {
     
     try {
       const response = await this.forwardToServerAndWait(serverWs, message);
-      ws.send(JSON.stringify(response));
+      const { response: toSend } = this.prepareResponseForClient(response);
+      ws.send(JSON.stringify(toSend));
     } catch (error) {
       this.sendError(ws, 'Forwarding failed', message.id);
     }
@@ -1078,7 +1104,7 @@ export class ProxyServer {
       },
       id
     };
-    
-    ws.send(JSON.stringify(response));
+    const { response: toSend } = this.prepareResponseForClient(response);
+    ws.send(JSON.stringify(toSend));
   }
 }

@@ -100,6 +100,8 @@ export interface ProxyConfig {
     retentionDays: number;
     dashboardEnabled: boolean;
   };
+  /** When true, sensitive data in MCP responses is detected and redacted (default: true, env MCP_SECRET_MASKING_ENABLED). */
+  secretMaskingEnabled?: boolean;
 }
 
 export interface VectorMemoryItem {

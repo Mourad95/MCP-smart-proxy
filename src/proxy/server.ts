@@ -61,13 +61,24 @@ export class ProxyServer {
    */
   async start(): Promise<void> {
     await this.vectorMemory.initialize();
-    
+
     // Connect to configured MCP servers
     await this.connectToServers();
-    
-    this.httpServer.listen(this.config.port, () => {
-      console.log(`🌐 Proxy server listening on port ${this.config.port}`);
-      console.log(`🔌 Connected to ${this.serverConnections.size} MCP servers`);
+
+    return new Promise<void>((resolve, reject) => {
+      this.httpServer.once('error', (err: NodeJS.ErrnoException) => {
+        if (err.code === 'EADDRINUSE') {
+          const msg = `Port ${this.config.port} is already in use. Stop the other process (e.g. \`lsof -ti :${this.config.port} | xargs kill\`) or use another port (--port).`;
+          reject(new Error(msg));
+        } else {
+          reject(err);
+        }
+      });
+      this.httpServer.listen(this.config.port, () => {
+        console.log(`🌐 Proxy server listening on port ${this.config.port}`);
+        console.log(`🔌 Connected to ${this.serverConnections.size} MCP servers`);
+        resolve();
+      });
     });
   }
   
@@ -123,6 +134,78 @@ export class ProxyServer {
         optimization: this.config.optimization.enabled,
         dashboardAuth: this.dashboardAuth.isAuthRequired()
       });
+    });
+
+    // Context optimization: public endpoint (POST only, used by test-proxy.js and API clients)
+    this.app.get('/optimize', (_req, res) => {
+      res.setHeader('Allow', 'POST');
+      res.status(405).json({
+        error: { code: 405, message: 'Method Not Allowed. Use POST with body: { query?: string, tools: Array<{ name, description?, server? }> }' }
+      });
+    });
+
+    this.app.post('/optimize', async (req, res) => {
+      res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate');
+      try {
+        const body = req.body && typeof req.body === 'object' ? req.body : {};
+        const { tools, query = '' } = body;
+
+        if (!tools || !Array.isArray(tools)) {
+          res.status(400).json({
+            error: {
+              code: 400,
+              message: 'Invalid request: tools array is required'
+            }
+          });
+          return;
+        }
+
+        // Convert tools to MCPContext format
+        const mcpTools: MCPTool[] = tools.map((tool: any) => ({
+          name: tool.name,
+          description: tool.description || '',
+          inputSchema: tool.inputSchema || { type: 'object', properties: {} },
+          server: tool.server || 'unknown'
+        }));
+
+        const context: MCPContext = {
+          tools: mcpTools
+        };
+
+        // Get server list for optimization
+        const servers = this.config.mcpServers.map(server => ({
+          name: server.name,
+          url: server.url
+        }));
+
+        // Optimize context (implementation in context-optimizer.ts)
+        const optimizedContext = await this.contextOptimizer.optimizeContext(
+          query,
+          context,
+          servers
+        );
+
+        res.json({
+          originalToolCount: context.tools.length,
+          optimizedToolCount: optimizedContext.tools.length,
+          tokensSaved: optimizedContext.metadata.tokensSaved,
+          savingsPercent: optimizedContext.metadata.savingsPercent,
+          tools: optimizedContext.tools.map(tool => ({
+            name: tool.name,
+            description: tool.description,
+            server: tool.server
+          }))
+        });
+      } catch (error) {
+        console.error('Optimization failed:', error);
+        res.status(500).json({
+          error: {
+            code: 500,
+            message: 'Internal server error',
+            data: error instanceof Error ? error.message : String(error)
+          }
+        });
+      }
     });
     
     // Authentication routes (public)
@@ -180,6 +263,70 @@ export class ProxyServer {
       } catch (error) {
         console.error('Failed to reset stats:', error);
         res.status(500).json({ error: 'Failed to reset stats' });
+      }
+    });
+
+    // Context optimization endpoint
+    this.app.post('/api/optimize', this.dashboardAuth.createBasicAuthMiddleware(), async (req, res) => {
+      try {
+        const { tools, query = '' } = req.body;
+        
+        if (!tools || !Array.isArray(tools)) {
+          res.status(400).json({
+            error: {
+              code: 400,
+              message: 'Invalid request: tools array is required'
+            }
+          });
+          return;
+        }
+
+        // Convert tools to MCPContext format
+        const mcpTools: MCPTool[] = tools.map((tool: any) => ({
+          name: tool.name,
+          description: tool.description || '',
+          inputSchema: tool.inputSchema || { type: 'object', properties: {} },
+          server: tool.server || 'unknown'
+        }));
+
+        const context: MCPContext = {
+          tools: mcpTools
+        };
+
+        // Get server list for optimization
+        const servers = this.config.mcpServers.map(server => ({
+          name: server.name,
+          url: server.url
+        }));
+
+        // Optimize context
+        const optimizedContext = await this.contextOptimizer.optimizeContext(
+          query,
+          context,
+          servers
+        );
+
+        res.json({
+          originalToolCount: context.tools.length,
+          optimizedToolCount: optimizedContext.tools.length,
+          tokensSaved: optimizedContext.metadata.tokensSaved,
+          savingsPercent: optimizedContext.metadata.savingsPercent,
+          tools: optimizedContext.tools.map(tool => ({
+            name: tool.name,
+            description: tool.description,
+            server: tool.server
+          }))
+        });
+
+      } catch (error) {
+        console.error('Optimization failed:', error);
+        res.status(500).json({
+          error: {
+            code: 500,
+            message: 'Internal server error',
+            data: error instanceof Error ? error.message : String(error)
+          }
+        });
       }
     });
 
@@ -688,27 +835,48 @@ export class ProxyServer {
    * Forward HTTP request to server
    */
   private async forwardRequest(server: MCPServerConfig, request: MCPRequest): Promise<MCPResponse> {
-    // Simple HTTP forwarding implementation
-    // In production, you'd want proper error handling and timeout management
-    // Note: fetch doesn't support timeout directly, use AbortController
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), server.timeout || 30000);
-    
-    try {
-      const response = await fetch(server.url, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(request),
-        signal: controller.signal
+    // WebSocket forwarding implementation for MCP servers
+    return new Promise((resolve, reject) => {
+      const WebSocket = require('ws');
+      const ws = new WebSocket(server.url);
+      const timeout = setTimeout(() => {
+        ws.close();
+        reject(new Error('WebSocket connection timeout'));
+      }, server.timeout || 30000);
+      
+      ws.on('open', () => {
+        // Send the request
+        ws.send(JSON.stringify(request));
+        
+        // Set up response handler
+        ws.on('message', (data: Buffer) => {
+          try {
+            const response = JSON.parse(data.toString());
+            if (response.id === request.id) {
+              clearTimeout(timeout);
+              ws.close();
+              resolve(response as MCPResponse);
+            }
+          } catch (error) {
+            clearTimeout(timeout);
+            ws.close();
+            reject(error);
+          }
+        });
+        
+        // Handle WebSocket errors
+        ws.on('error', (error) => {
+          clearTimeout(timeout);
+          reject(error);
+        });
       });
       
-      clearTimeout(timeoutId);
-      const data = await response.json();
-      return data as MCPResponse;
-    } catch (error) {
-      clearTimeout(timeoutId);
-      throw error;
-    }
+      // Handle connection errors
+      ws.on('error', (error) => {
+        clearTimeout(timeout);
+        reject(error);
+      });
+    });
   }
   
   /**

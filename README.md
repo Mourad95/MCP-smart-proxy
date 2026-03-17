@@ -6,20 +6,36 @@
 ![Open Source](https://img.shields.io/badge/Open%20Source-MIT-green)
 ![Node Version](https://img.shields.io/badge/Node-%3E%3D18.0.0-success)
 ![TypeScript](https://img.shields.io/badge/TypeScript-5.0+-blue)
+![Local First](https://img.shields.io/badge/Local%20First-No%20data%20leakage-success)
+![Security](https://img.shields.io/badge/Security-Privacy%20by%20design-blue)
 
-**Intelligent proxy for Model Context Protocol (MCP) that optimizes context usage and reduces token waste by 70-90%**
+**Intelligent proxy for Model Context Protocol (MCP) — moins de tokens, contexte ciblé, tout tourne en local. Aucune fuite de données.**
 
 </div>
 
+## 🎯 Pourquoi MCP Smart Proxy ?
+
+Trois raisons principales de l’utiliser :
+
+| Bénéfice | Explication |
+|----------|-------------|
+| **💰 Moins de tokens** | Réduction de **70 à 90 %** de la consommation de tokens. Moins de coût par requête, moins de gaspillage de contexte. |
+| **🎯 LLM plus précis** | Contexte **plus petit et ciblé** → moins de bruit, moins d’hallucinations. Le modèle reçoit uniquement l’essentiel. |
+| **🔒 Sécurisé, pas de fuite** | **Tout tourne en local** : code, embeddings, données. Aucun envoi vers des serveurs tiers. Vos prompts et réponses restent chez vous. |
+
+MCP Smart Proxy est une couche d’optimisation pour le Model Context Protocol (MCP). Là où les implémentations classiques gaspillent jusqu’à **81 %** du contexte (Cloudflare), ce proxy ramène le gaspillage à **10–30 %**, tout en gardant vos données sur votre machine.
+
 ## 🚀 Overview
 
-MCP Smart Proxy is a general-purpose optimization layer for the Model Context Protocol (MCP) that addresses the critical issue of context window waste identified by Cloudflare. While traditional MCP implementations can waste up to 81% of the context window, our proxy reduces this waste to 10-30%, saving significant costs and improving performance.
+MCP Smart Proxy is a general-purpose optimization layer for the Model Context Protocol (MCP) that addresses the critical issue of context window waste identified by Cloudflare. While traditional MCP implementations can waste up to 81% of the context window, our proxy reduces this waste to 10-30%. **You get lower token usage, a smaller and cleaner context (so the LLM is more accurate), and full privacy: everything runs locally with no data sent to third parties.**
 
 ### ✨ Key Features
 
-- **70-90% Context Optimization**: Dramatically reduces token consumption
+- **70-90% Context Optimization**: Dramatically reduces token consumption — **real cost savings**
+- **Smaller, focused context**: Less noise → **more precise answers**, fewer hallucinations
+- **🔒 Local-first & secure**: Runs entirely on your machine — **no data sent to third parties**, no leakage
 - **Semantic Routing**: Intelligently routes requests to the most relevant tools
-- **Vector-Based Memory**: Local embeddings for semantic search without API costs
+- **Vector-Based Memory**: Local embeddings (e.g. Xenova/all-MiniLM) — **no external API** for embeddings
 - **Tool Aggregation**: Unified interface for multiple MCP servers
 - **Performance Monitoring**: Real-time analytics and optimization insights
 - **Easy Integration**: Drop-in replacement for existing MCP implementations
@@ -100,6 +116,17 @@ Beyond the token cost, this oversized and poorly controlled context **also signi
 - **Deduplication**: Remove redundant information
 - **Optimized Routing**: Smart tool selection based on query semantics
 - **Context noise reduction**: By sending less but more targeted context, the model operates in a cleaner environment, which **reduces hallucinations** and improves answer reliability.
+
+## 🔒 Sécurité et confidentialité — aucune fuite de données
+
+**MCP Smart Proxy est conçu pour tourner entièrement chez vous.** C’est la plus-value sécurité principale :
+
+- **Exécution locale** : Le proxy, les embeddings (modèles type Xenova/all-MiniLM) et les index vectoriels s’exécutent sur votre machine ou votre infra. Aucun envoi de vos prompts, réponses ou contexte vers des serveurs externes.
+- **Pas de fuite** : Vos données restent dans votre périmètre (localhost, réseau interne ou conteneurs sous votre contrôle). Idéal pour code propriétaire, secrets ou données sensibles.
+- **Secret masking** : Les réponses des serveurs MCP sont nettoyées (clés API, tokens, URLs de BDD, etc.) avant d’être renvoyées au client.
+- **Contrôle total** : Vous choisissez les serveurs MCP, les modèles d’embedding et l’endroit où tourne le proxy.
+
+Pour le détail (rate limiting, validation, déploiement sécurisé), voir **[SECURITY.md](SECURITY.md)**.
 
 ## 🏗️ Architecture
 
@@ -297,6 +324,8 @@ curl http://localhost:3000/analytics/report
 ## 📈 Performance Metrics
 
 ### Token Savings Comparison
+Moins de tokens = **moins de coût** et **contexte plus petit** → le LLM est plus précis et hallucine moins.
+
 | Scenario | Traditional MCP | Smart Proxy | Savings |
 |----------|----------------|-------------|---------|
 | Simple Query | 1,000 tokens | 300 tokens | 70% |
@@ -543,6 +572,7 @@ make test
 - [Advanced Usage](docs/advanced-usage.md) - Custom configurations
 - [Performance Tuning](docs/performance-tuning.md) - Optimization guide
 - [Troubleshooting](docs/troubleshooting.md) - Common issues and solutions
+- **[SECURITY.md](SECURITY.md)** - Sécurité, confidentialité, déploiement local
 
 ## 🐳 Production Deployment
 
@@ -612,6 +642,8 @@ MIT License - see [LICENSE](LICENSE) file for details.
 ```bash
 npm install mcp-smart-proxy
 ```
+
+*Moins de tokens · Contexte ciblé · Tout en local, sans fuite de données.*
 
 *"While Cloudflare proves MCP wastes 81% of context, we save 90% of it."*
 

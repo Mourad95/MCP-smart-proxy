@@ -1,4 +1,5 @@
 import express from 'express';
+import rateLimit from 'express-rate-limit';
 import cors from 'cors';
 import helmet from 'helmet';
 import morgan from 'morgan';
@@ -22,6 +23,19 @@ import {
   MCPTool
 } from '../types/mcp-types';
 import { SecretMasking } from '../security/secret-masking';
+
+/** Normalize http(s) URL to ws(s) for WebSocket connections. Idempotent if already ws(s). */
+function normalizeWebSocketUrl(url: string): string {
+  try {
+    const u = url.trim();
+    if (/^wss?:\/\//i.test(u)) return u;
+    if (u.startsWith('https://')) return u.replace(/^https:\/\//i, 'wss://');
+    if (u.startsWith('http://')) return u.replace(/^http:\/\//i, 'ws://');
+    return u;
+  } catch {
+    return url;
+  }
+}
 
 /**
  * MCP Smart Proxy Server
@@ -76,6 +90,19 @@ export class ProxyServer {
 
     // Connect to configured MCP servers
     await this.connectToServers();
+
+    // Index tools for semantic routing (so ContextOptimizer can find relevant tools)
+    if (this.config.optimization.enabled && this.serverConnections.size > 0) {
+      try {
+        const allTools = await this.getAllTools();
+        const mcpTools = allTools.filter((t) => !t.name.startsWith('get_') && !t.name.startsWith('export_'));
+        if (mcpTools.length > 0) {
+          await this.vectorMemory.indexTools(mcpTools);
+        }
+      } catch (e) {
+        console.error('Failed to index tools for semantic routing:', e);
+      }
+    }
 
     return new Promise<void>((resolve, reject) => {
       this.httpServer.once('error', (err: NodeJS.ErrnoException) => {
@@ -136,6 +163,18 @@ export class ProxyServer {
   private setupMiddleware(): void {
     // Security headers
     this.app.use(helmet());
+    
+    // Rate limiting (per SECURITY.md)
+    const rateLimitMax = parseInt(process.env.MCP_RATE_LIMIT_REQUESTS || '100', 10) || 100;
+    const rateLimitWindowMs = parseInt(process.env.MCP_RATE_LIMIT_WINDOW_MS || '60000', 10) || 60000;
+    this.app.use(
+      rateLimit({
+        windowMs: rateLimitWindowMs,
+        max: rateLimitMax,
+        standardHeaders: true,
+        legacyHeaders: false
+      })
+    );
     
     // CORS
     this.app.use(cors());
@@ -641,7 +680,8 @@ export class ProxyServer {
    */
   private async connectToServer(server: MCPServerConfig): Promise<void> {
     return new Promise((resolve, reject) => {
-      const ws = new WebSocket(server.url);
+      const wsUrl = normalizeWebSocketUrl(server.url);
+      const ws = new WebSocket(wsUrl);
       
       ws.on('open', () => {
         console.log(`✅ Connected to MCP server: ${server.name}`);
@@ -901,8 +941,8 @@ export class ProxyServer {
   private async forwardToServer(ws: WebSocket, message: any): Promise<void> {
     // Simple implementation - forward to first available server
     // In production, you'd want more sophisticated routing
-    const serverName = Object.keys(this.serverConnections)[0];
-    const serverWs = this.serverConnections.get(serverName);
+    const firstServerName = this.serverConnections.keys().next().value;
+    const serverWs = firstServerName != null ? this.serverConnections.get(firstServerName) : undefined;
     
     if (!serverWs) {
       this.sendError(ws, 'No servers available', message.id);
@@ -925,7 +965,8 @@ export class ProxyServer {
     // WebSocket forwarding implementation for MCP servers
     return new Promise((resolve, reject) => {
       const WebSocket = require('ws');
-      const ws = new WebSocket(server.url);
+      const wsUrl = normalizeWebSocketUrl(server.url);
+      const ws = new WebSocket(wsUrl);
       const timeout = setTimeout(() => {
         ws.close();
         reject(new Error('WebSocket connection timeout'));

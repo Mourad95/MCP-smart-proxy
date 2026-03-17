@@ -139,11 +139,12 @@ export class SemanticCache {
     toolName?: string
   ): Promise<void> {
     await this.initialize();
-    const id = `sc_${Date.now()}_${Math.random().toString(36).slice(2, 11)}`;
-    let responseStr = JSON.stringify(response);
+    const responseStr = JSON.stringify(response);
+    // Do not store truncated responses: truncated JSON is invalid and would cause get() to fail (cache miss) and bloat the index
     if (responseStr.length > MAX_CACHED_RESPONSE_LENGTH) {
-      responseStr = responseStr.slice(0, MAX_CACHED_RESPONSE_LENGTH);
+      return;
     }
+    const id = `sc_${Date.now()}_${Math.random().toString(36).slice(2, 11)}`;
     await this.index.insertItem({
       vector: embedding,
       metadata: {

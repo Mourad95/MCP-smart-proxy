@@ -6,12 +6,16 @@ import { ProxyConfig } from '../types/mcp-types';
  * Configuration loader and validator for MCP Smart Proxy
  */
 
+/**
+ * Default config. MCP server URLs should be WebSocket (ws:// or wss://).
+ * The proxy also accepts http:// and https:// and normalizes them to ws(s) at connection time.
+ */
 const DEFAULT_CONFIG: ProxyConfig = {
   port: 3000,
   mcpServers: [
     {
       name: 'example-filesystem',
-      url: 'http://localhost:8080',
+      url: 'ws://localhost:8080',
       description: 'Example filesystem server',
       priority: 1,
       enabled: true,
@@ -19,7 +23,7 @@ const DEFAULT_CONFIG: ProxyConfig = {
     },
     {
       name: 'example-github',
-      url: 'http://localhost:8081',
+      url: 'ws://localhost:8081',
       description: 'Example GitHub server',
       priority: 2,
       enabled: true,

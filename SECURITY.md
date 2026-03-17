@@ -38,6 +38,8 @@ The proxy automatically detects and masks sensitive information in MCP server re
 MCP_SECRET_MASKING_ENABLED=true
 ```
 
+**Implementation note:** The "secrets detected" count is incremented per string field that contained at least one match, not per occurrence. Use it for coarse monitoring only, not as a precise security metric.
+
 ### 2. **Environment Validation**
 Strict validation of environment variables at startup:
 
@@ -76,12 +78,16 @@ Proper handling of termination signals ensures data integrity:
 Protection against abuse and DoS attacks:
 
 ```bash
-# Configure rate limits
-MCP_RATE_LIMIT_REQUESTS=100  # Requests per minute per IP
+# Configure rate limits (applied via express-rate-limit on HTTP/API)
+MCP_RATE_LIMIT_REQUESTS=100  # Requests per window per IP
 MCP_RATE_LIMIT_WINDOW_MS=60000  # 1 minute window
 ```
 
-### 5. **Input Validation & Sanitization**
+### 5. **Dashboard authentication**
+- Tokens are stored in memory (invalidated on restart). Suitable for internal/single-user use.
+- No RBAC or per-role permissions; dashboard access is all-or-nothing.
+
+### 6. **Input Validation & Sanitization**
 - All MCP requests are validated against schemas
 - JSON parsing with size limits
 - Path traversal prevention

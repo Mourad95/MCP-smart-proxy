@@ -15,118 +15,75 @@
 
 ## 🎯 Why MCP Smart Proxy?
 
-Three main reasons to use it:
+An optimization layer for the Model Context Protocol (MCP). Traditional implementations waste up to **81%** of the context window (Cloudflare); this proxy cuts that to **10–30%**.
 
 | Benefit | Explanation |
 |---------|-------------|
-| **💰 Fewer tokens** | **70–90%** reduction in token consumption. Lower cost per request, less context waste. |
-| **🎯 More precise LLM** | **Smaller, focused context** → less noise, fewer hallucinations. The model receives only what matters. |
-| **🔒 Secure, no leakage** | **Everything runs locally**: code, embeddings, data. No data sent to third-party servers. Your prompts and responses stay on your machine. |
-
-MCP Smart Proxy is an optimization layer for the Model Context Protocol (MCP). Where traditional implementations waste up to **81%** of the context (Cloudflare), this proxy cuts that waste to **10–30%**, while keeping your data on your machine.
-
-## 🚀 Overview
-
-MCP Smart Proxy is a general-purpose optimization layer for the Model Context Protocol (MCP) that addresses the critical issue of context window waste identified by Cloudflare. While traditional MCP implementations can waste up to 81% of the context window, our proxy reduces this waste to 10-30%. **You get lower token usage, a smaller and cleaner context (so the LLM is more accurate), and full privacy: everything runs locally with no data sent to third parties.**
+| **💰 Fewer tokens** | **70–90%** less token consumption → lower cost, less waste. |
+| **🎯 More precise LLM** | Smaller, focused context → less noise, fewer hallucinations. |
+| **🔒 Secure, no leakage** | Runs entirely locally; no prompts or data sent to third parties. |
 
 ### ✨ Key Features
 
-- **70-90% Context Optimization**: Dramatically reduces token consumption — **real cost savings**
-- **Smaller, focused context**: Less noise → **more precise answers**, fewer hallucinations
-- **🔒 Local-first & secure**: Runs entirely on your machine — **no data sent to third parties**, no leakage
-- **Semantic Routing**: Intelligently routes requests to the most relevant tools
-- **Vector-Based Memory**: Local embeddings (e.g. Xenova/all-MiniLM) — **no external API** for embeddings
-- **Tool Aggregation**: Unified interface for multiple MCP servers
-- **Performance Monitoring**: Real-time analytics and optimization insights
-- **Easy Integration**: Drop-in replacement for existing MCP implementations
-- **Open Source**: MIT licensed, community-driven development
+- **Semantic Routing** — Routes requests to the most relevant tools
+- **Vector-Based Memory** — Local embeddings (e.g. Xenova/all-MiniLM), no external API
+- **Tool Aggregation** — Unified interface for multiple MCP servers
+- **Performance Monitoring** — Real-time analytics and dashboard
+- **Drop-in replacement** — Works with existing MCP clients (Claude Desktop, Cursor). MIT licensed.
 
-## ⚡ Quick Start for Enterprise Developers
-
-This section is for developers and DevOps engineers who just want the proxy up and running quickly in a standard environment.
+## ⚡ Quick Start
 
 ### Option A – Docker Compose (recommended)
 
-Best for local/dev environments and teams already using Docker:
-
 ```bash
 git clone https://github.com/Mourad95/mcp-smart-proxy.git
 cd mcp-smart-proxy
-
-# Start proxy + dashboard (and optional sidecars) in the background
 make docker-compose
-
-# Check health
 curl http://localhost:3000/health
 ```
 
-### Option B – From Source with Makefile
-
-Best if you want to read or modify the code:
+### Option B – From source
 
 ```bash
 git clone https://github.com/Mourad95/mcp-smart-proxy.git
 cd mcp-smart-proxy
-
-# Install backend + dashboard dependencies
-make install
-
-# Build backend + healthcheck + dashboard
-make build
-
-# Run the proxy from the built artifacts
-make run
+make install && make build && make run
+# Or for development: make dev
 ```
 
-For development with live TypeScript:
-
-```bash
-make dev
-```
-
-### Option C – Global CLI via npm (optional)
-
-If you publish the package to npm, a CLI workflow can look like:
+### Option C – Global CLI (optional)
 
 ```bash
 npm install -g mcp-smart-proxy
-
-# Start with default config
 mcp-smart-proxy start --config ./config/default.json
 ```
 
-You can then point your MCP-compatible client (e.g. Claude Desktop, Cursor) at the proxy instead of your raw MCP servers.
+**Connect your client** — Point your MCP client (Claude Desktop, Cursor, etc.) at the proxy instead of raw MCP servers. Example:
 
-## 📊 The Problem: MCP Context Waste & Hallucinations
+```json
+{
+  "mcpServers": {
+    "smart-proxy": {
+      "command": "npx",
+      "args": ["-y", "mcp-smart-proxy"],
+      "env": { "MCP_PROXY_PORT": "3000" }
+    }
+  }
+}
+```
 
-Cloudflare's research shows that traditional MCP implementations waste **81% of the context window** by:
-1. Sending unnecessary tool descriptions
-2. Including irrelevant context
-3. Duplicating information
-4. Poor tool selection
+**Health & metrics:** `curl http://localhost:3000/health` · `curl http://localhost:3000/metrics` · Dashboard: `http://localhost:3000/dashboard`
 
-Beyond the token cost, this oversized and poorly controlled context **also significantly increases the risk of hallucinations**:
-- the model is flooded with unnecessary tool descriptions and resources;
-- truly relevant signals are diluted in noise;
-- the likelihood that the model “fills gaps” or reconciles conflicting information by inventing details goes up.
+## 📊 The problem: context waste & hallucinations
 
-### Our Solution:
-- **Intelligent Tool Filtering**: Only send relevant tool descriptions
-- **Semantic Context Selection**: Choose only pertinent context
-- **Deduplication**: Remove redundant information
-- **Optimized Routing**: Smart tool selection based on query semantics
-- **Context noise reduction**: By sending less but more targeted context, the model operates in a cleaner environment, which **reduces hallucinations** and improves answer reliability.
+Traditional MCP wastes **81%** of the context (unnecessary tool descriptions, irrelevant context, duplication, poor tool choice). That also increases hallucinations — the model gets too much noise and fills gaps by inventing details.
 
-## 🔒 Security and privacy — no data leakage
 
-**MCP Smart Proxy is designed to run entirely on your side.** That’s the main security benefit:
+**Our approach:** intelligent tool filtering, semantic context selection, deduplication, and optimized routing so the model receives less but targeted context → fewer hallucinations, better reliability.
 
-- **Local execution**: The proxy, embeddings (e.g. Xenova/all-MiniLM), and vector indexes run on your machine or your infra. No prompts, responses, or context are sent to external servers.
-- **No leakage**: Your data stays within your perimeter (localhost, internal network, or containers you control). Ideal for proprietary code, secrets, or sensitive data.
-- **Secret masking**: MCP server responses are sanitized (API keys, tokens, DB URLs, etc.) before being returned to the client.
-- **Full control**: You choose the MCP servers, embedding models, and where the proxy runs.
+## 🔒 Security and privacy
 
-For details (rate limiting, validation, secure deployment), see **[SECURITY.md](SECURITY.md)**.
+Runs entirely on your side: proxy, embeddings, and vector indexes stay on your machine or infra — **no prompts or data sent to third parties**. Responses are sanitized (API keys, tokens, DB URLs masked). You control which MCP servers and embedding models run where. See **[SECURITY.md](SECURITY.md)** for rate limiting, validation, and deployment.
 
 ## 🏗️ Architecture
 
@@ -150,30 +107,6 @@ For details (rate limiting, validation, secure deployment), see **[SECURITY.md](
                         │  │  Memory   │  │
                         │  └───────────┘  │
                         └─────────────────┘
-```
-
-## 🛠️ Installation
-
-### Quick Install (Development)
-```bash
-# Clone the repository
-git clone https://github.com/Mourad95/mcp-smart-proxy.git
-cd mcp-smart-proxy
-
-# Install backend + dashboard dependencies
-make install
-
-# Build everything (backend + healthcheck + dashboard)
-make build
-
-# Run the proxy (build + start from dist/)
-make run
-```
-
-### Health Check
-```bash
-# Check proxy health
-curl http://localhost:3000/health
 ```
 
 ## ⚙️ Configuration
@@ -280,51 +213,9 @@ mcp-smart-proxy/
 └── package.json
 ```
 
-## 🚀 Quick Start
-
-### 1. Basic Proxy Setup
-```bash
-# Install and build (first time)
-make install
-make build
-
-# Start the proxy
-make run
-
-# Or run in dev mode (ts-node)
-make dev
-```
-
-### 2. Connect MCP Clients
-Configure your MCP client to connect to the proxy:
-
-```json
-{
-  "mcpServers": {
-    "smart-proxy": {
-      "command": "npx",
-      "args": ["-y", "mcp-smart-proxy"],
-      "env": {
-        "MCP_PROXY_PORT": "3000"
-      }
-    }
-  }
-}
-```
-
-### 3. Monitor Performance
-```bash
-# View optimization metrics
-curl http://localhost:3000/metrics
-
-# Get detailed report
-curl http://localhost:3000/analytics/report
-```
-
 ## 📈 Performance Metrics
 
-### Token Savings Comparison
-Fewer tokens = **lower cost** and **smaller context** → the LLM is more precise and hallucinates less.
+### Token savings
 
 | Scenario | Traditional MCP | Smart Proxy | Savings |
 |----------|----------------|-------------|---------|
@@ -415,53 +306,13 @@ npm run benchmark
 npm run benchmark:compare
 ```
 
-## 🔍 How It Works
+## 🔍 How it works
 
-### 1. **Semantic Analysis**
-- Analyzes query intent using embeddings
-- Identifies relevant tools and context
-- Removes irrelevant information
+Semantic analysis (embeddings) → intelligent routing to MCP servers → context optimization (dedup, token-efficient format) → optional learning from query patterns.
 
-### 2. **Intelligent Routing**
-- Routes to appropriate MCP servers
-- Aggregates responses from multiple servers
-- Handles fallbacks and error recovery
+## 📊 Monitoring
 
-### 3. **Context Optimization**
-- Limits context to relevant information
-- Removes duplicates and boilerplate
-- Formats efficiently for token usage
-
-### 4. **Learning & Adaptation**
-- Learns from query patterns
-- Adapts routing based on success rates
-- Continuously improves optimization
-
-## 📊 Monitoring & Analytics
-
-### Built-in Dashboard
-```bash
-# Start with dashboard enabled
-npm start -- --dashboard
-
-# Access dashboard at http://localhost:3000/dashboard
-```
-
-### Metrics Export
-```bash
-# Export metrics to Prometheus format
-curl http://localhost:3000/metrics/prometheus
-
-# Get JSON analytics
-curl http://localhost:3000/analytics/json
-```
-
-### Key Metrics Tracked
-- **Token Savings**: Percentage of tokens saved
-- **Response Time**: Average and P95 response times
-- **Cache Hit Rate**: Query cache effectiveness
-- **Tool Usage**: Frequency of each tool
-- **Error Rates**: Success/failure rates
+Dashboard at `http://localhost:3000/dashboard`. Metrics: `curl http://localhost:3000/metrics` (Prometheus: `/metrics/prometheus`, JSON: `/analytics/json`). Tracked: token savings, response time, cache hit rate, tool usage, error rates.
 
 ## 🔄 Maintenance
 
@@ -546,17 +397,10 @@ We welcome contributions from the community! Here's how to get started:
 4. **Run tests**: `npm test`
 5. **Submit a pull request**
 
-### Development Setup
+### Development setup
 ```bash
-git clone https://github.com/openclaw-community/mcp-smart-proxy.git
-cd mcp-smart-proxy
-
-# Install dependencies
-make install
-
-# Build + run tests
-make build
-make test
+git clone https://github.com/Mourad95/mcp-smart-proxy.git && cd mcp-smart-proxy
+make install && make build && make test
 ```
 
 ### Code Standards
@@ -574,46 +418,9 @@ make test
 - [Troubleshooting](docs/troubleshooting.md) - Common issues and solutions
 - **[SECURITY.md](SECURITY.md)** - Security, privacy, local deployment
 
-## 🐳 Production Deployment
+## 🐳 Production deployment
 
-### Docker Configuration
-The project includes production-ready Docker configuration:
-
-1. **Multi-stage Dockerfile** optimized for size
-2. **Docker Compose** with sidecar MCP servers
-3. **Health checks** for container orchestration
-4. **Persistent volumes** for vector storage
-5. **Monitoring stack** (Prometheus + Grafana)
-
-### Quick Start with Docker Compose
-```bash
-# Clone and deploy
-git clone https://github.com/Mourad95/mcp-smart-proxy.git
-cd mcp-smart-proxy
-docker-compose up -d
-
-# Access dashboard
-open http://localhost:3000/dashboard
-```
-
-### Health Monitoring
-```bash
-# Built-in health checks
-curl http://localhost:3000/health
-
-# Prometheus metrics
-curl http://localhost:3000/metrics/prometheus
-
-# Grafana dashboard (if enabled)
-open http://localhost:3001
-```
-
-### Persistent Storage
-Vector data is stored in Docker volumes:
-- **mcp-data**: Vector indexes and embeddings
-- Backups recommended for production use
-
-See [DEPLOYMENT.md](DEPLOYMENT.md) for detailed production deployment guide.
+Production Docker setup: multi-stage Dockerfile, Docker Compose with sidecar MCP servers, health checks, persistent volumes (vector data), optional Prometheus + Grafana. See [DEPLOYMENT.md](DEPLOYMENT.md) for the full guide.
 
 ## 📄 License
 
@@ -643,9 +450,7 @@ MIT License - see [LICENSE](LICENSE) file for details.
 npm install mcp-smart-proxy
 ```
 
-*Fewer tokens · Focused context · Everything runs locally, no data leakage.*
-
-*"While Cloudflare proves MCP wastes 81% of context, we save 90% of it."*
+*Fewer tokens, focused context, local-only — no data leakage. While Cloudflare shows MCP wastes 81% of context, we save up to 90%.*
 
 </div>
 </result>

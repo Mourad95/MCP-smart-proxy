@@ -30,18 +30,11 @@ export class VectorMemory {
   async initialize(): Promise<void> {
     if (this.initialized) return;
 
-    console.log('Loading embedding model:', this.embeddingModel);
     this.embedder = await pipeline('feature-extraction', this.embeddingModel);
-    
-    if (!await this.index.isIndexCreated()) {
+    if (!(await this.index.isIndexCreated())) {
       await this.index.createIndex();
-      console.log('Created new vector index at:', this.indexPath);
-    } else {
-      console.log('Loaded existing vector index from:', this.indexPath);
     }
-
     this.initialized = true;
-    console.log('VectorMemory initialized successfully');
   }
 
   /**

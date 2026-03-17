@@ -88,10 +88,14 @@ program
         semanticCache
       );
       await server.start();
-      
+      const configuredServers = config.mcpServers.filter((s) => s.enabled).length;
+      const connectedServers = server.getConnectedServerCount();
+      console.log('');
       console.log(`✅ MCP Smart Proxy running on port ${config.port}`);
       console.log(`📊 Dashboard: ${config.analytics.dashboardEnabled ? `http://localhost:${config.port}/dashboard` : 'disabled'}`);
+      console.log(`🔌 MCP servers: ${connectedServers}/${configuredServers} connected`);
       console.log(`🔧 Optimization: ${config.optimization.enabled ? 'enabled' : 'disabled'}`);
+      console.log('');
       
       // Handle graceful shutdown
       process.on('SIGINT', async () => {

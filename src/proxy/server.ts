@@ -56,6 +56,7 @@ export class ProxyServer {
   private semanticCache: SemanticCache | null;
   private secretMasking: SecretMasking;
   private secretMaskingEnabled: boolean;
+  private connectPromise: Promise<void> | null = null;
 
   constructor(
     private config: ProxyConfig,
@@ -87,23 +88,7 @@ export class ProxyServer {
     if (this.semanticCache) {
       await this.semanticCache.initialize();
     }
-
-    // Connect to configured MCP servers
-    await this.connectToServers();
-
-    // Index tools for semantic routing (so ContextOptimizer can find relevant tools)
-    if (this.config.optimization.enabled && this.serverConnections.size > 0) {
-      try {
-        const allTools = await this.getAllTools();
-        const mcpTools = allTools.filter((t) => !t.name.startsWith('get_') && !t.name.startsWith('export_'));
-        if (mcpTools.length > 0) {
-          await this.vectorMemory.indexTools(mcpTools);
-        }
-      } catch (e) {
-        console.error('Failed to index tools for semantic routing:', e);
-      }
-    }
-
+    // MCP servers are connected on first use (lazy), not at startup
     return new Promise<void>((resolve, reject) => {
       this.httpServer.once('error', (err: NodeJS.ErrnoException) => {
         if (err.code === 'EADDRINUSE') {
@@ -113,12 +98,13 @@ export class ProxyServer {
           reject(err);
         }
       });
-      this.httpServer.listen(this.config.port, () => {
-        console.log(`🌐 Proxy server listening on port ${this.config.port}`);
-        console.log(`🔌 Connected to ${this.serverConnections.size} MCP servers`);
-        resolve();
-      });
+      this.httpServer.listen(this.config.port, () => resolve());
     });
+  }
+
+  /** Number of MCP servers currently connected (for startup summary). */
+  getConnectedServerCount(): number {
+    return this.serverConnections.size;
   }
   
   /**
@@ -661,6 +647,31 @@ export class ProxyServer {
   }
   
   /**
+   * Ensure MCP servers are connected (lazy connect on first use). No-op if already connected or no enabled servers.
+   */
+  private async ensureServersConnected(): Promise<void> {
+    const enabled = this.config.mcpServers.filter((s) => s.enabled);
+    if (enabled.length === 0 || this.serverConnections.size > 0) return;
+    if (this.connectPromise) {
+      await this.connectPromise;
+      return;
+    }
+    this.connectPromise = this.connectToServers();
+    await this.connectPromise;
+    if (this.config.optimization.enabled && this.serverConnections.size > 0) {
+      try {
+        const allTools = await this.getAllTools();
+        const mcpTools = allTools.filter((t) => !t.name.startsWith('get_') && !t.name.startsWith('export_'));
+        if (mcpTools.length > 0) {
+          await this.vectorMemory.indexTools(mcpTools);
+        }
+      } catch {
+        // ignore
+      }
+    }
+  }
+
+  /**
    * Connect to configured MCP servers
    */
   private async connectToServers(): Promise<void> {
@@ -673,16 +684,10 @@ export class ProxyServer {
         const refused =
           err?.code === 'ECONNREFUSED' ||
           (Array.isArray(err?.errors) && err.errors.some((e) => e?.code === 'ECONNREFUSED'));
-        if (refused) {
-          console.warn(`⚠️  ${server.name} not reachable at ${server.url} (connection refused). Is the MCP server running?`);
-        } else {
+        if (!refused) {
           console.error(`Failed to connect to server ${server.name}:`, error);
         }
       }
-    }
-    const n = this.serverConnections.size;
-    if (n === 0 && enabled.length > 0) {
-      console.warn(`⚠️  No MCP servers connected (0/${enabled.length}). Start your MCP servers or check config mcpServers[].url`);
     }
   }
 
@@ -852,12 +857,13 @@ export class ProxyServer {
     try {
       const { name, arguments: args } = message.params;
 
-      // Check if it's a stats tool
+      // Check if it's a stats tool (no MCP server needed)
       if (name.startsWith('get_') || name.startsWith('export_')) {
         await this.handleStatsToolCall(ws, message);
         return;
       }
 
+      await this.ensureServersConnected();
       // Find which server has this tool
       const server = await this.findServerForTool(name);
       if (!server) {
@@ -946,8 +952,8 @@ export class ProxyServer {
    * Forward message to appropriate server
    */
   private async forwardToServer(ws: WebSocket, message: any): Promise<void> {
+    await this.ensureServersConnected();
     // Simple implementation - forward to first available server
-    // In production, you'd want more sophisticated routing
     const firstServerName = this.serverConnections.keys().next().value;
     const serverWs = firstServerName != null ? this.serverConnections.get(firstServerName) : undefined;
     
@@ -1045,6 +1051,7 @@ export class ProxyServer {
    * Get all tools from all servers
    */
   private async getAllTools(): Promise<MCPTool[]> {
+    await this.ensureServersConnected();
     const allTools: MCPTool[] = [];
     
     // Get tools from connected MCP servers

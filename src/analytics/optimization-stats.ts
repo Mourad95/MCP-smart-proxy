@@ -75,10 +75,7 @@ export class OptimizationStatsManager {
       ]
     });
     
-    this.logger.info('OptimizationStatsManager initialized', {
-      statsPath: this.statsPath,
-      initialStats: this.stats
-    });
+    this.logger.debug('OptimizationStatsManager initialized', { statsPath: this.statsPath });
   }
   
   /**
@@ -93,12 +90,6 @@ export class OptimizationStatsManager {
         // Convert date strings back to Date objects
         savedStats.startTime = new Date(savedStats.startTime);
         savedStats.lastUpdate = new Date(savedStats.lastUpdate);
-        
-        // Logger is not initialized yet here; use console
-        console.info('Loaded existing optimization stats', {
-          totalRequests: savedStats.totalRequests,
-          totalTokensSaved: savedStats.totalTokensSaved
-        });
         
         return savedStats;
       }

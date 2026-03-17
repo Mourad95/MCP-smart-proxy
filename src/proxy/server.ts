@@ -664,17 +664,28 @@ export class ProxyServer {
    * Connect to configured MCP servers
    */
   private async connectToServers(): Promise<void> {
-    for (const server of this.config.mcpServers) {
-      if (!server.enabled) continue;
-      
+    const enabled = this.config.mcpServers.filter((s) => s.enabled);
+    for (const server of enabled) {
       try {
         await this.connectToServer(server);
       } catch (error) {
-        console.error(`Failed to connect to server ${server.name}:`, error);
+        const err = error as NodeJS.ErrnoException & { errors?: Array<{ code?: string }> };
+        const refused =
+          err?.code === 'ECONNREFUSED' ||
+          (Array.isArray(err?.errors) && err.errors.some((e) => e?.code === 'ECONNREFUSED'));
+        if (refused) {
+          console.warn(`⚠️  ${server.name} not reachable at ${server.url} (connection refused). Is the MCP server running?`);
+        } else {
+          console.error(`Failed to connect to server ${server.name}:`, error);
+        }
       }
     }
+    const n = this.serverConnections.size;
+    if (n === 0 && enabled.length > 0) {
+      console.warn(`⚠️  No MCP servers connected (0/${enabled.length}). Start your MCP servers or check config mcpServers[].url`);
+    }
   }
-  
+
   /**
    * Connect to a single MCP server
    */
@@ -682,20 +693,16 @@ export class ProxyServer {
     return new Promise((resolve, reject) => {
       const wsUrl = normalizeWebSocketUrl(server.url);
       const ws = new WebSocket(wsUrl);
-      
+
       ws.on('open', () => {
         console.log(`✅ Connected to MCP server: ${server.name}`);
         this.serverConnections.set(server.name, ws);
         resolve();
       });
-      
-      ws.on('error', (error) => {
-        console.error(`❌ Connection error for server ${server.name}:`, error);
-        reject(error);
-      });
-      
+
+      ws.on('error', (error) => reject(error));
+
       ws.on('close', () => {
-        console.log(`🔌 Disconnected from server: ${server.name}`);
         this.serverConnections.delete(server.name);
       });
       

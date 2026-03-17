@@ -11,10 +11,11 @@ import { ContextOptimizer } from '../optimization/context-optimizer';
 import { OptimizationStatsTool } from '../analytics/mcp-tool';
 import { ReportExporter } from '../analytics/report-exporter';
 import { DashboardAuth } from '../auth/dashboard-auth';
-import { 
-  ProxyConfig, 
-  MCPRequest, 
-  MCPResponse, 
+import { SemanticCache } from '../cache/semantic-cache';
+import {
+  ProxyConfig,
+  MCPRequest,
+  MCPResponse,
   MCPContext,
   MCPServerConfig,
   OptimizedContext,
@@ -37,13 +38,16 @@ export class ProxyServer {
   private statsTool: OptimizationStatsTool;
   private reportExporter: ReportExporter;
   private dashboardAuth: DashboardAuth;
-  
+  private semanticCache: SemanticCache | null;
+
   constructor(
     private config: ProxyConfig,
     private vectorMemory: VectorMemory,
     private contextOptimizer: ContextOptimizer,
-    statsDir?: string
+    statsDir?: string,
+    semanticCache?: SemanticCache | null
   ) {
+    this.semanticCache = semanticCache ?? null;
     this.app = express();
     this.httpServer = createServer(this.app);
     this.wss = new WebSocketServer({ server: this.httpServer });
@@ -61,6 +65,9 @@ export class ProxyServer {
    */
   async start(): Promise<void> {
     await this.vectorMemory.initialize();
+    if (this.semanticCache) {
+      await this.semanticCache.initialize();
+    }
 
     // Connect to configured MCP servers
     await this.connectToServers();
@@ -218,20 +225,50 @@ export class ProxyServer {
     // Apply auth middleware to all API routes
     this.app.use('/api', apiAuthMiddleware);
     
+    // Prometheus metrics (semantic cache counters)
+    this.app.get(
+      '/metrics/prometheus',
+      this.dashboardAuth.createBasicAuthMiddleware(),
+      async (_req, res) => {
+        res.setHeader('Content-Type', 'text/plain; version=0.0.4; charset=utf-8');
+        const lines: string[] = [];
+        if (this.semanticCache) {
+          const st = this.semanticCache.getStats();
+          lines.push('# HELP mcp_semantic_cache_hits_total Total semantic cache hits.');
+          lines.push('# TYPE mcp_semantic_cache_hits_total counter');
+          lines.push(`mcp_semantic_cache_hits_total ${st.hits}`);
+          lines.push('# HELP mcp_semantic_cache_misses_total Total semantic cache misses.');
+          lines.push('# TYPE mcp_semantic_cache_misses_total counter');
+          lines.push(`mcp_semantic_cache_misses_total ${st.misses}`);
+          lines.push('# HELP mcp_semantic_cache_entries Number of entries in semantic cache.');
+          lines.push('# TYPE mcp_semantic_cache_entries gauge');
+          lines.push(`mcp_semantic_cache_entries ${await this.semanticCache.getSize()}`);
+        }
+        res.send(lines.join('\n') + '\n');
+      }
+    );
+
     // Metrics endpoint (protected if auth required)
-    this.app.get('/metrics', this.dashboardAuth.createBasicAuthMiddleware(), (req, res) => {
+    this.app.get('/metrics', this.dashboardAuth.createBasicAuthMiddleware(), async (req, res) => {
       res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
       res.setHeader('Pragma', 'no-cache');
       res.setHeader('Expires', '0');
       const metrics = this.contextOptimizer.getMetrics();
       const cacheStats = this.contextOptimizer.getCacheStats();
+      const semanticCacheStats = this.semanticCache
+        ? {
+            ...this.semanticCache.getStats(),
+            size: await this.semanticCache.getSize()
+          }
+        : null;
       res.json({
         optimization: {
           totalRequests: metrics.length,
-          averageSavings: metrics.length > 0 
+          averageSavings: metrics.length > 0
             ? metrics.reduce((sum, m) => sum + m.savingsPercent, 0) / metrics.length
             : 0,
-          cache: cacheStats
+          cache: cacheStats,
+          semanticCache: semanticCacheStats
         },
         servers: {
           configured: this.config.mcpServers.length,
@@ -744,36 +781,60 @@ export class ProxyServer {
   private async handleToolCall(ws: WebSocket, message: any): Promise<void> {
     try {
       const { name, arguments: args } = message.params;
-      
+
       // Check if it's a stats tool
       if (name.startsWith('get_') || name.startsWith('export_')) {
         await this.handleStatsToolCall(ws, message);
         return;
       }
-      
+
       // Find which server has this tool
       const server = await this.findServerForTool(name);
       if (!server) {
         this.sendError(ws, `Tool not found: ${name}`, message.id);
         return;
       }
-      
-      // Forward to server
+
       const serverWs = this.serverConnections.get(server.name);
       if (!serverWs) {
         this.sendError(ws, `Server not connected: ${server.name}`, message.id);
         return;
       }
-      
-      // Forward request and wait for response
+
+      const useSemanticCache =
+        this.config.optimization.semanticCacheEnabled &&
+        this.semanticCache &&
+        !this.semanticCache.shouldBypass(server.name, message.params);
+
+      const queryKey = `${name}:${JSON.stringify(args ?? {})}`;
+      let embedding: number[] | null = null;
+      if (useSemanticCache) {
+        embedding = await this.vectorMemory.generateEmbedding(queryKey);
+        const cached = await this.semanticCache!.get(embedding, server.name);
+        if (cached.hit) {
+          const response: MCPResponse = { ...cached.response, id: message.id };
+          ws.send(JSON.stringify(response));
+          return;
+        }
+      }
+
       const response = await this.forwardToServerAndWait(serverWs, {
         method: 'tools/call',
         params: { name, arguments: args },
         id: message.id
       });
-      
+
+      if (useSemanticCache && response && !response.error && embedding) {
+        await this.semanticCache!.set(
+          embedding,
+          queryKey,
+          response,
+          server.name,
+          name
+        );
+      }
+
       ws.send(JSON.stringify(response));
-      
     } catch (error) {
       console.error('Tool call failed:', error);
       this.sendError(ws, 'Tool call failed', message.id);

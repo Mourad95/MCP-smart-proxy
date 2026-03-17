@@ -83,6 +83,12 @@ export interface ProxyConfig {
     cacheEnabled: boolean;
     semanticRouting: boolean;
     minRelevanceScore: number;
+    /** Semantic cache: return cached MCP response when request embedding matches past queries */
+    semanticCacheEnabled?: boolean;
+    semanticCacheThreshold?: number;
+    semanticCacheTtlSeconds?: number;
+    semanticCacheBypassServers?: string[];
+    semanticCacheBypassFlag?: string;
   };
   logging: {
     level: 'debug' | 'info' | 'warn' | 'error';

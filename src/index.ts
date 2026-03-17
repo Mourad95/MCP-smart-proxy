@@ -6,6 +6,7 @@ import { Command } from 'commander';
 import { ProxyServer } from './proxy/server';
 import { VectorMemory } from './memory/vector-memory';
 import { ContextOptimizer } from './optimization/context-optimizer';
+import { SemanticCache } from './cache/semantic-cache';
 import { EnvValidator } from './config/env-validator';
 import { SignalHandler } from './utils/signal-handler';
 // import { SecretMasking } from './security/secret-masking';
@@ -64,9 +65,24 @@ program
         config.optimization,
         statsDir
       );
-      
+
+      const semanticCache = config.optimization.semanticCacheEnabled
+        ? new SemanticCache({
+            threshold: config.optimization.semanticCacheThreshold,
+            ttlSeconds: config.optimization.semanticCacheTtlSeconds,
+            bypassServers: config.optimization.semanticCacheBypassServers,
+            bypassFlag: config.optimization.semanticCacheBypassFlag
+          })
+        : null;
+
       // Create and start proxy server
-      const server = new ProxyServer(config, vectorMemory, contextOptimizer, statsDir);
+      const server = new ProxyServer(
+        config,
+        vectorMemory,
+        contextOptimizer,
+        statsDir,
+        semanticCache
+      );
       await server.start();
       
       console.log(`✅ MCP Smart Proxy running on port ${config.port}`);

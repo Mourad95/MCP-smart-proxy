@@ -26,6 +26,7 @@ An optimization layer for the Model Context Protocol (MCP). Traditional implemen
 ### ✨ Key Features
 
 - **Semantic Routing** — Routes requests to the most relevant tools
+- **Semantic Cache** — Returns cached MCP responses when queries are semantically similar (see [Semantic Cache](docs/SEMANTIC-CACHE.md))
 - **Vector-Based Memory** — Local embeddings (e.g. Xenova/all-MiniLM), no external API
 - **Tool Aggregation** — Unified interface for multiple MCP servers
 - **Performance Monitoring** — Real-time analytics and dashboard
@@ -87,6 +88,37 @@ Runs entirely on your side: proxy, embeddings, and vector indexes stay on your m
 
 ## 🏗️ Architecture
 
+```mermaid
+flowchart LR
+  subgraph client[" "]
+    A["Claude Desktop / Cursor"]
+  end
+  subgraph proxy[" "]
+    B["MCP Smart Proxy"]
+  end
+  subgraph servers[" "]
+    C[GitHub]
+    D[SQLite]
+    E[Filesystem]
+    F[Custom...]
+  end
+  A -->|"request"| B
+  B --> C
+  B --> D
+  B --> E
+  B --> F
+  C --> B
+  D --> B
+  E --> B
+  F --> B
+  B -->|"optimized response"| A
+```
+
+**In one glance:** the client talks only to the proxy; the proxy picks the right MCP servers (GitHub, SQLite, filesystem, etc.), trims context, and returns a lean answer — fewer tokens, fewer hallucinations, everything local.
+
+<details>
+<summary>Internal components (ASCII)</summary>
+
 ```
 ┌─────────────────┐    ┌─────────────────┐    ┌─────────────────┐
 │   MCP Client    │    │   Smart Proxy   │    │   MCP Servers   │
@@ -101,13 +133,13 @@ Runs entirely on your side: proxy, embeddings, and vector indexes stay on your m
 │  │ Response  │  │    │  │ Optimizer │  │    │  │           │  │
 │  └───────────┘  │    │  └───────────┘  │    │  └───────────┘  │
 └─────────────────┘    └─────────────────┘    └─────────────────┘
-                        │                 │
                         │  ┌───────────┐  │
                         │  │ Vector    │  │
                         │  │  Memory   │  │
                         │  └───────────┘  │
                         └─────────────────┘
 ```
+</details>
 
 ## ⚙️ Configuration
 
@@ -414,6 +446,7 @@ make install && make build && make test
 - [Getting Started](docs/getting-started.md) - First-time setup guide
 - [API Reference](docs/api-reference.md) - Complete API documentation
 - [Advanced Usage](docs/advanced-usage.md) - Custom configurations
+- [Semantic Cache](docs/SEMANTIC-CACHE.md) - Semantic cache (similarity-based response caching)
 - [Performance Tuning](docs/performance-tuning.md) - Optimization guide
 - [Troubleshooting](docs/troubleshooting.md) - Common issues and solutions
 - **[SECURITY.md](SECURITY.md)** - Security, privacy, local deployment

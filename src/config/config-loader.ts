@@ -32,7 +32,12 @@ const DEFAULT_CONFIG: ProxyConfig = {
     embeddingModel: 'Xenova/all-MiniLM-L6-v2',
     cacheEnabled: true,
     semanticRouting: true,
-    minRelevanceScore: 0.3
+    minRelevanceScore: 0.3,
+    semanticCacheEnabled: false,
+    semanticCacheThreshold: 0.95,
+    semanticCacheTtlSeconds: 3600,
+    semanticCacheBypassServers: [],
+    semanticCacheBypassFlag: 'skip_semantic_cache'
   },
   logging: {
     level: 'info',
